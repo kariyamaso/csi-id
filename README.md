@@ -51,6 +51,8 @@ We also offer [pre-trained weights](https://drive.google.com/drive/folders/1NBVe
 To run models with supervised learning (train & test):  
 Run: `python run.py --model [model name] --dataset [dataset name]`  
 
+To store logs in the same format as `train_all_models.py`, pass `--log-dir logs/run_single` (or use `--log-file path/to/log.txt`). The script will create `logs/run_single/<dataset>/<timestamp>_<model>.log` and tee stdout/stderr into it.
+
 You can choose [model name] from the model list below
 - MLP
 - LeNet

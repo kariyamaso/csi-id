@@ -1,9 +1,29 @@
+import argparse
+import datetime as dt
 import os
+import sys
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn as nn
-import argparse
+
 from util import load_data_n_model
+
+
+class _Tee:
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for stream in self.streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
 
 def train(model, tensor_loader, num_epochs, learning_rate, criterion, device):
     model = model.to(device)
@@ -60,15 +80,19 @@ def test(model, tensor_loader, criterion, device):
     return
 
     
-def main():
-    root = './Data/' 
+def parse_args():
     parser = argparse.ArgumentParser('WiFi Imaging Benchmark')
     parser.add_argument('--dataset', choices = ['UT_HAR_data','NTU-Fi-HumanID','NTU-Fi_HAR','Widar'])
     parser.add_argument('--model', choices = ['MLP','LeNet','ResNet18','ResNet50','ResNet101','RNN','GRU','LSTM','BiLSTM', 'CNN+GRU','ViT','SSM','Mamba'])
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to a pretrained state_dict to load before training.')
     parser.add_argument('--eval-only', action='store_true', help='Skip training and only run evaluation.')
-    args = parser.parse_args()
+    parser.add_argument('--log-dir', type=str, default=None, help='Directory to store logs (mirrors train_all format).')
+    parser.add_argument('--log-file', type=str, default=None, help='Explicit log file path. Overrides --log-dir if both are provided.')
+    return parser.parse_args()
 
+
+def run_experiment(args):
+    root = './Data/' 
     train_loader, test_loader, model, train_epoch = load_data_n_model(args.dataset, args.model, root)
     criterion = nn.CrossEntropyLoss()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,7 +128,31 @@ def main():
         criterion=criterion,
         device= device
         )
-    return
+
+
+def main():
+    args = parse_args()
+    log_path = None
+    if args.log_file:
+        log_path = Path(args.log_file)
+    elif args.log_dir:
+        timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_path = Path(args.log_dir) / args.dataset / f"{timestamp}_{args.model}.log"
+
+    if not log_path:
+        run_experiment(args)
+        return
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with ExitStack() as stack:
+        log_file = stack.enter_context(log_path.open("w", buffering=1))
+        cmdline = f"python {' '.join(sys.argv[1:])}"
+        log_file.write(f"$ {cmdline}\n\n")
+        tee_out = _Tee(sys.stdout, log_file)
+        tee_err = _Tee(sys.stderr, log_file)
+        with redirect_stdout(tee_out), redirect_stderr(tee_err):
+            run_experiment(args)
+    print(f"Logs written to {log_path}")
 
 
 if __name__ == "__main__":
