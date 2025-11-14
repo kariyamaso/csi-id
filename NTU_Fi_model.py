@@ -350,50 +350,39 @@ class NTU_Fi_SSM(nn.Module):
         return self.head(seq)
 
 
-class ResidualMambaBlock(nn.Module):
-    def __init__(self, d_model, d_state=16, d_conv=4, expand=2, dropout=0.2):
+class MambaEncoderBlock(nn.Module):
+    def __init__(self, d_model, d_state, d_conv=4, expand=2, dropout=0.1):
         super().__init__()
         if MambaLayer is None:
             raise ImportError(
-                "mamba-ssm is required for ResidualMambaBlock. "
+                "mamba-ssm is required for MambaEncoderBlock. "
                 "Install it via `pip install mamba-ssm`."
             )
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.mixer = MambaLayer(
+        self.norm = nn.LayerNorm(d_model)
+        self.mamba = MambaLayer(
             d_model=d_model,
             d_state=d_state,
             d_conv=d_conv,
             expand=expand,
         )
         self.dropout = nn.Dropout(dropout)
-        hidden = d_model * expand
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, hidden),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden, d_model),
-            nn.Dropout(dropout),
-        )
 
     def forward(self, x):
-        x = x + self.dropout(self.mixer(self.norm1(x)))
-        x = x + self.ffn(self.norm2(x))
-        return x
+        residual = x
+        x = self.mamba(self.norm(x))
+        return residual + self.dropout(x)
 
 
 class NTU_Fi_Mamba(nn.Module):
     def __init__(
         self,
         num_classes,
-        in_channels=3,
-        cnn_channels=64,
-        d_model=128,
-        depth=2,
-        d_state=16,
+        d_model=256,
+        depth=4,
+        d_state=64,
         d_conv=4,
         expand=2,
-        dropout=0.2,
+        dropout=0.1,
     ):
         super().__init__()
         if MambaLayer is None:
@@ -401,21 +390,13 @@ class NTU_Fi_Mamba(nn.Module):
                 "mamba-ssm is required for NTU_Fi_Mamba. "
                 "Install it via `pip install mamba-ssm`."
             )
-        self.frontend = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.GELU(),
-            nn.Conv2d(32, cnn_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(cnn_channels),
-            nn.GELU(),
-        )
-        self.temporal_proj = nn.Sequential(
-            nn.LayerNorm(cnn_channels),
-            nn.Linear(cnn_channels, d_model),
+        self.input_proj = nn.Sequential(
+            nn.Linear(342, d_model),
+            nn.LayerNorm(d_model),
         )
         self.blocks = nn.ModuleList(
             [
-                ResidualMambaBlock(
+                MambaEncoderBlock(
                     d_model=d_model,
                     d_state=d_state,
                     d_conv=d_conv,
@@ -427,16 +408,17 @@ class NTU_Fi_Mamba(nn.Module):
         )
         self.norm = nn.LayerNorm(d_model)
         self.head = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Linear(d_model, num_classes),
+            nn.Linear(d_model, d_model // 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model // 2, num_classes),
         )
 
     def forward(self, x):
-        # x: (B, C, S, T)
-        feats = self.frontend(x)
-        feats = feats.mean(dim=2)  # subcarrier pooling -> (B, cnn_channels, T)
-        seq = feats.transpose(1, 2)  # (B, T, cnn_channels)
-        seq = self.temporal_proj(seq)
+        batch_size = x.size(0)
+        seq = x.view(batch_size, 3 * 114, 500)
+        seq = seq.permute(0, 2, 1)
+        seq = self.input_proj(seq)
         for block in self.blocks:
             seq = block(seq)
         seq = self.norm(seq).mean(dim=1)
