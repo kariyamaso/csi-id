@@ -102,7 +102,48 @@ def collect_logs(log_dir: pathlib.Path) -> Dict[str, Dict[str, object]]:
     return results
 
 
-def plot_validation_bar(results: Dict[str, Dict[str, object]], out_path: pathlib.Path) -> None:
+MAMBA_COLOR = "#e41a1c"  # strong red to highlight the new model prominently
+BASE_COLORS = [
+    "#377eb8",
+    "#4daf4a",
+    "#984ea3",
+    "#ff7f00",
+    "#f781bf",
+    "#a65628",
+    "#999999",
+    "#66c2a5",
+    "#fc8d62",
+    "#8da0cb",
+    "#e78ac3",
+    "#a6d854",
+    "#ffd92f",
+    "#e5c494",
+    "#b3b3b3",
+]
+
+
+def _cycle_colors(count: int) -> List[str]:
+    if count <= len(BASE_COLORS):
+        return BASE_COLORS[:count]
+    repeats = (count + len(BASE_COLORS) - 1) // len(BASE_COLORS)
+    return (BASE_COLORS * repeats)[:count]
+
+
+def build_model_palette(models: List[str]) -> Dict[str, tuple]:
+    palette: Dict[str, tuple] = {}
+    if "Mamba" in models:
+        palette["Mamba"] = MAMBA_COLOR
+    remaining_models = [m for m in sorted(models) if m not in palette]
+    for model, color in zip(remaining_models, _cycle_colors(len(remaining_models))):
+        palette[model] = color
+    return palette
+
+
+def plot_validation_bar(
+    results: Dict[str, Dict[str, object]],
+    out_path: pathlib.Path,
+    palette: Dict[str, tuple],
+) -> None:
     """Create a horizontal bar chart of validation accuracies."""
     data = sorted(
         [(model, stats["val_acc"]) for model, stats in results.items()],
@@ -111,14 +152,13 @@ def plot_validation_bar(results: Dict[str, Dict[str, object]], out_path: pathlib
     models, accuracies = zip(*data)
     accuracies_pct = [acc * 100 for acc in accuracies]
 
-    cmap = plt.get_cmap("tab20")
-    colors = [cmap(i % cmap.N) for i in range(len(models))]
+    colors = [palette[model] for model in models]
 
     fig, ax = plt.subplots(figsize=(14, 6))
-    bars = ax.barh(models, accuracies_pct, color=colors, alpha=0.85)
+    bars = ax.barh(models, accuracies_pct, color=colors, alpha=0.9)
     ax.set_xlabel("Validation Accuracy (%)")
-    ax.set_title("NTU-Fi HumanID Validation Accuracy (non-SSM models)")
-    ax.set_xlim(0, 105)
+    ax.set_title("NTU-Fi HumanID Validation Accuracy")
+    ax.set_xlim(0, 108)
     for bar, acc in zip(bars, accuracies_pct):
         ax.text(
             bar.get_width() + 1,
@@ -126,7 +166,6 @@ def plot_validation_bar(results: Dict[str, Dict[str, object]], out_path: pathlib
             f"{acc:.1f}%",
             va="center",
         )
-    # Add a legend mapping colors to models for clarity.
     legend = ax.legend(
         bars,
         models,
@@ -141,7 +180,11 @@ def plot_validation_bar(results: Dict[str, Dict[str, object]], out_path: pathlib
     plt.close(fig)
 
 
-def plot_training_curves(results: Dict[str, Dict[str, object]], out_path: pathlib.Path) -> None:
+def plot_training_curves(
+    results: Dict[str, Dict[str, object]],
+    out_path: pathlib.Path,
+    palette: Dict[str, tuple],
+) -> None:
     """Plot accuracy + loss learning curves for every model."""
     plt.figure(figsize=(14, 6))
     ax_acc = plt.subplot(1, 2, 1)
@@ -149,8 +192,9 @@ def plot_training_curves(results: Dict[str, Dict[str, object]], out_path: pathli
 
     for model, stats in results.items():
         epochs = stats["epochs"]
-        ax_acc.plot(epochs, [a * 100 for a in stats["train_acc"]], label=model)
-        ax_loss.plot(epochs, stats["train_loss"], label=model)
+        color = palette[model]
+        ax_acc.plot(epochs, [a * 100 for a in stats["train_acc"]], label=model, color=color)
+        ax_loss.plot(epochs, stats["train_loss"], label=model, color=color)
 
     ax_acc.set_title("Training Accuracy vs. Epoch")
     ax_acc.set_xlabel("Epoch")
@@ -217,8 +261,9 @@ def main():
     curves_path = args.out_dir / "training_curves.png"
     metrics_path = args.out_dir / "parsed_metrics.json"
 
-    plot_validation_bar(results, bar_path)
-    plot_training_curves(results, curves_path)
+    palette = build_model_palette(list(results.keys()))
+    plot_validation_bar(results, bar_path, palette)
+    plot_training_curves(results, curves_path, palette)
     save_metrics(results, metrics_path)
     print(f"Wrote validation chart -> {bar_path}")
     print(f"Wrote training curves -> {curves_path}")
