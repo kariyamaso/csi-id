@@ -16,3 +16,5 @@ model_pt/
 logs/
 .cache/
 *.zip
+results/
+ntu_fi_results/

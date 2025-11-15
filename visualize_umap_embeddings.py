@@ -57,12 +57,15 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 try:
     from umap import UMAP
 except Exception as e:  # pragma: no cover - optional dependency
     print(
-        "[error] Failed to import umap-learn. Install with `pip install umap-learn`.",
+        f"[error] UMAP import failed: {e!r}.\n"
+        "Try installing compatible versions, e.g.\n"
+        "  pip install 'umap-learn>=0.5.4' 'scikit-learn==1.0.2' 'pandas==1.3.5'\n",
         file=sys.stderr,
     )
     raise
@@ -163,20 +166,38 @@ def fit_umap(
     return reducer.fit_transform(X)
 
 
+def _compute_class_order(class_ids: Iterable[int], class_names: Optional[Dict[int, str]] = None) -> List[int]:
+    """Return class ids ordered by their display name (e.g., '001'..'015')."""
+    def key_fn(cid: int):
+        name = None
+        if class_names and int(cid) in class_names:
+            name = class_names[int(cid)]
+        if name is None:
+            # fallback to numeric id
+            return (0, int(cid))
+        # Try numeric sort based on the display name if it's digits like '001'
+        return (0, int(name)) if name.isdigit() else (1, str(name))
+
+    return [int(c) for c in sorted(set(int(i) for i in class_ids), key=key_fn)]
+
+
 def plot_umap(
     Z: np.ndarray,
     y: np.ndarray,
     title: str,
     out_path: pathlib.Path,
-    num_classes: Optional[int] = None,
     color_map: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
     class_names: Optional[Dict[int, str]] = None,
+    class_order: Optional[List[int]] = None,
 ) -> None:
     plt.figure(figsize=(7, 6))
     ax = plt.gca()
-    classes = np.unique(y)
-    if num_classes is not None:
-        classes = np.array(sorted(list(classes)))
+    classes_present = list(np.unique(y))
+    if class_order is None:
+        classes = _compute_class_order(classes_present, class_names)
+    else:
+        # keep only those present, preserve provided order
+        classes = [cid for cid in class_order if cid in set(int(c) for c in classes_present)]
     cmap = plt.get_cmap("tab20")
     for cls in classes:
         idx = (y == cls)
@@ -196,13 +217,7 @@ def plot_umap(
     ax.set_xlabel("UMAP-1")
     ax.set_ylabel("UMAP-2")
     ax.grid(True, alpha=0.2)
-    ax.legend(
-        title="Class",
-        loc="lower left",
-        bbox_to_anchor=(1.01, 0.0),
-        fontsize="small",
-        borderaxespad=0,
-    )
+    ax.legend(title="Class", loc="lower right", fontsize="small")
     plt.tight_layout(rect=(0, 0, 0.86, 1))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(out_path, dpi=200)
@@ -214,6 +229,7 @@ def plot_comparison_grid(
     out_path: pathlib.Path,
     color_map: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
     class_names: Optional[Dict[int, str]] = None,
+    class_order: Optional[List[int]] = None,
 ) -> None:
     cols = len(panels)
     fig, axes = plt.subplots(1, cols, figsize=(6 * cols, 5))
@@ -221,7 +237,11 @@ def plot_comparison_grid(
         axes = [axes]
     cmap = plt.get_cmap("tab20")
     for ax, (title, Z, y) in zip(axes, panels):
-        classes = np.unique(y)
+        classes_present = list(np.unique(y))
+        if class_order is None:
+            classes = _compute_class_order(classes_present, class_names)
+        else:
+            classes = [cid for cid in class_order if cid in set(int(c) for c in classes_present)]
         for cls in classes:
             idx = (y == cls)
             color = (
@@ -240,13 +260,30 @@ def plot_comparison_grid(
         ax.set_xlabel("UMAP-1")
         ax.set_ylabel("UMAP-2")
         ax.grid(True, alpha=0.2)
-    handles, labels = axes[0].get_legend_handles_labels()
+    # Build a unified legend in bottom-right with the requested order
+    if class_order is None:
+        # derive from all panels
+        all_ids: List[int] = []
+        for _, _, y in panels:
+            all_ids.extend(list(np.unique(y)))
+        class_order = _compute_class_order(all_ids, class_names)
+
+    handles: List[Line2D] = []
+    labels: List[str] = []
+    for cid in class_order:
+        color = (
+            color_map.get(int(cid)) if (color_map is not None and int(cid) in color_map) else cmap(int(cid) % cmap.N)
+        )
+        label = class_names[int(cid)] if class_names and int(cid) in class_names else str(int(cid)).zfill(3)
+        handles.append(Line2D([0], [0], marker='o', color='none', markerfacecolor=color, markersize=6, label=label))
+        labels.append(label)
+
     fig.legend(
         handles,
         labels,
         title="Class",
-        loc="lower left",
-        bbox_to_anchor=(1.01, 0.0),
+        loc="lower right",
+        bbox_to_anchor=(0.98, 0.02),
         fontsize="small",
         borderaxespad=0,
     )
@@ -275,11 +312,15 @@ def _extract_class_names_from_loader(loader) -> Optional[Dict[int, str]]:
     return None
 
 
-def _build_color_map(class_ids: Iterable[int]) -> Dict[int, Tuple[float, float, float, float]]:
-    """Stable color assignment for each class id using tab20/tab20b/tab20c."""
+def _build_color_map(class_ids: Iterable[int], class_names: Optional[Dict[int, str]] = None) -> Dict[int, Tuple[float, float, float, float]]:
+    """Stable color assignment for each class id using tab20/tab20b/tab20c.
+
+    The assignment follows the provided class order (when possible via class_names),
+    ensuring colors map consistently to '001'..'015'.
+    """
     cmaps = [plt.get_cmap("tab20"), plt.get_cmap("tab20b"), plt.get_cmap("tab20c")]
     colors: Dict[int, Tuple[float, float, float, float]] = {}
-    classes = list(sorted(set(int(c) for c in class_ids)))
+    classes = _compute_class_order(class_ids, class_names)
     idx = 0
     for cls in classes:
         cmap = cmaps[(idx // 20) % len(cmaps)]
@@ -409,18 +450,19 @@ def main():
     # Combined comparison figure
     # Build stable color map and (optional) class names
     class_names = _extract_class_names_from_loader(loader)
-    color_map = _build_color_map(collected_class_ids)
+    class_order = _compute_class_order(collected_class_ids, class_names)
+    color_map = _build_color_map(class_order, class_names)
 
     # Write individual panels using the same color map/names
     for model_name, Z, y in panels:
         title = f"{args.dataset} — {model_name}"
         out_path = args.out_dir / f"umap_{args.dataset}_{model_name}.png"
-        plot_umap(Z, y, title, out_path, color_map=color_map, class_names=class_names)
+        plot_umap(Z, y, title, out_path, color_map=color_map, class_names=class_names, class_order=class_order)
         print(f"[ok] Wrote {out_path}")
 
     # Combined comparison figure
     comp_path = args.out_dir / f"umap_{args.dataset}_comparison.png"
-    plot_comparison_grid(panels, comp_path, color_map=color_map, class_names=class_names)
+    plot_comparison_grid(panels, comp_path, color_map=color_map, class_names=class_names, class_order=class_order)
     print(f"[ok] Wrote {comp_path}")
 
 
