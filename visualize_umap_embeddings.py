@@ -38,6 +38,7 @@ import os
 import pathlib
 import sys
 from typing import Dict, Iterable, List, Tuple, Optional
+import glob
 
 import numpy as np
 import torch
@@ -57,6 +58,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import scipy.io as sio  # for APPLIED normalization
 from matplotlib.lines import Line2D
 
 try:
@@ -71,6 +73,7 @@ except Exception as e:  # pragma: no cover - optional dependency
     raise
 
 from util import load_data_n_model
+import dataset as csi_dataset
 from NTU_Fi_model import NTU_Fi_GRU, NTU_Fi_ViT, NTU_Fi_Mamba
 
 
@@ -401,6 +404,51 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Ensure normalization for APPLIED dataset, mirroring run.py behavior
+    data_root = "./Data/"
+    if (
+        args.dataset == "APPLIED"
+        and not (os.environ.get("NTU_FI_NORM_MEAN") and os.environ.get("NTU_FI_NORM_STD"))
+    ):
+        split_dir = os.path.join(data_root, "APPLIED", "train_amp")
+        files = sorted(glob.glob(os.path.join(split_dir, "*", "*.mat")))
+        if files:
+            total = 0
+            s = 0.0
+            s2 = 0.0
+            for path in files:
+                mat = sio.loadmat(path)
+                if "CSIamp" not in mat:
+                    continue
+                x = np.asarray(mat["CSIamp"], dtype=np.float64)
+                # Accept (S,T) or (1,S,T) or (3,S,T)
+                if x.ndim == 3:
+                    try:
+                        x = x.reshape(-1, 114, 500).mean(axis=0)
+                    except Exception:
+                        continue
+                elif x.ndim == 2:
+                    pass
+                else:
+                    continue
+                if x.shape != (114, 500):
+                    if x.shape == (500, 114):
+                        x = x.T
+                    else:
+                        continue
+                s += x.sum()
+                s2 += np.square(x, dtype=np.float64).sum()
+                total += x.size
+            if total > 0:
+                mean = s / total
+                var = max(s2 / total - mean * mean, 0.0)
+                std = float(np.sqrt(var)) if var > 0 else 1.0
+                try:
+                    csi_dataset.set_csi_normalization(float(mean), float(std))
+                except Exception:
+                    os.environ["NTU_FI_NORM_MEAN"] = str(float(mean))
+                    os.environ["NTU_FI_NORM_STD"] = str(float(std))
 
     # Load a representative loader (we don't train here). Choose the first
     # model that can be initialized for this dataset to obtain the loaders.
