@@ -186,7 +186,7 @@ def plot_training_curves(
     palette: Dict[str, tuple],
 ) -> None:
     """Plot accuracy + loss learning curves for every model."""
-    plt.figure(figsize=(14, 6))
+    fig = plt.figure(figsize=(14, 6))
     ax_acc = plt.subplot(1, 2, 1)
     ax_loss = plt.subplot(1, 2, 2)
 
@@ -207,17 +207,24 @@ def plot_training_curves(
     ax_loss.grid(True, alpha=0.3)
 
     handles, labels = ax_acc.get_legend_handles_labels()
-    plt.figlegend(
+    legend = plt.figlegend(
         handles,
         labels,
         loc="upper center",
         ncol=4,
-        bbox_to_anchor=(0.5, 1.02),
+        bbox_to_anchor=(0.5, 1.04),
         fontsize="small",
     )
-    plt.tight_layout(rect=(0, 0, 1, 0.88))
-    plt.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
-    plt.close()
+    plt.tight_layout(rect=(0, 0, 1, 0.86))
+    # Ensure the figure-level legend is included in the bounding box
+    fig.savefig(
+        out_path,
+        dpi=200,
+        bbox_inches="tight",
+        bbox_extra_artists=(legend,),
+        pad_inches=0.3,
+    )
+    plt.close(fig)
 
 
 def save_metrics(results: Dict[str, Dict[str, object]], out_path: pathlib.Path) -> None:
