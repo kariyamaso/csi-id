@@ -9,6 +9,13 @@ Usage:
 
 All stdout/stderr from each `run.py` invocation is tee'd into
 `logs/train_all/<dataset>/<timestamp>_<model>.log`.
+
+Optionally save trained checkpoints usable by downstream tools (e.g. UMAP
+visualization) with:
+
+  python train_all_models.py --dataset NTU-Fi-HumanID --saveckpt --ckptdir model_pt
+
+This stores files as `<ckptdir>/<dataset>_<model>.pt`.
 """
 
 from __future__ import annotations
@@ -67,6 +74,16 @@ def main():
         help="Subset of models to train. Defaults to all SenseFi models.",
     )
     parser.add_argument(
+        "--saveckpt",
+        action="store_true",
+        help="Save trained weights for each model to <ckptdir>/<dataset>_<model>.pt",
+    )
+    parser.add_argument(
+        "--ckptdir",
+        default="model_pt",
+        help="Directory to store checkpoints when --saveckpt is set.",
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python interpreter to use when invoking run.py.",
@@ -90,6 +107,11 @@ def main():
             "--model",
             model,
         ]
+        if args.saveckpt:
+            ckptdir = pathlib.Path(args.ckptdir)
+            ckptdir.mkdir(parents=True, exist_ok=True)
+            ckpt_path = ckptdir / f"{args.dataset}_{model}.pt"
+            cmd += ["--save-ckpt", str(ckpt_path)]
         print(f"[{model}] training started… log -> {log_path}")
         ret = run_command(cmd, log_path)
         if ret == 0:

@@ -88,6 +88,7 @@ def parse_args():
     parser.add_argument('--eval-only', action='store_true', help='Skip training and only run evaluation.')
     parser.add_argument('--log-dir', type=str, default=None, help='Directory to store logs (mirrors train_all format).')
     parser.add_argument('--log-file', type=str, default=None, help='Explicit log file path. Overrides --log-dir if both are provided.')
+    parser.add_argument('--save-ckpt', type=str, default=None, help='File path to save model.state_dict() after training. Ignored with --eval-only.')
     return parser.parse_args()
 
 
@@ -128,6 +129,13 @@ def run_experiment(args):
         criterion=criterion,
         device= device
         )
+
+    # Save checkpoint if requested
+    if args.save_ckpt:
+        ckpt_path = Path(args.save_ckpt)
+        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), ckpt_path)
+        print(f"Saved checkpoint to {ckpt_path}")
 
 
 def main():
