@@ -9,6 +9,15 @@ from torch.utils.data import Dataset, DataLoader
 CSI_DEFAULT_MEAN = float(os.getenv("NTU_FI_NORM_MEAN", "42.3199"))
 CSI_DEFAULT_STD = float(os.getenv("NTU_FI_NORM_STD", "4.9802"))
 
+def set_csi_normalization(mean: float, std: float) -> None:
+    """Override module-level CSI normalization parameters at runtime.
+
+    This updates the values used by CSI_Dataset.__getitem__ for normalization.
+    """
+    global CSI_DEFAULT_MEAN, CSI_DEFAULT_STD
+    CSI_DEFAULT_MEAN = float(mean)
+    CSI_DEFAULT_STD = float(max(std, 1e-8))
+
 
 def UT_HAR_dataset(root_dir):
     data_list = glob.glob(root_dir+'/UT_HAR/data/*.csv')
@@ -102,3 +111,49 @@ class Widar_Dataset(Dataset):
         x = torch.FloatTensor(x)
 
         return x,y
+
+
+class CSI_Ready_Dataset(Dataset):
+    """Dataset for pre-shaped CSI amplitude tensors.
+
+    Expects MATLAB files with key 'CSIamp' shaped as (S, T), (1, S, T) or (3, S, T)
+    where S=114 and T=500. No downsampling or reshaping is applied. Optionally,
+    a single stream can be tiled to three to match existing model interfaces.
+    """
+
+    def __init__(self, root_dir: str, tile_to_three: bool = True):
+        self.root_dir = root_dir
+        self.tile_to_three = tile_to_three
+        self.data_list = glob.glob(root_dir + '/*/*.mat')
+        self.folder = glob.glob(root_dir + '/*/')
+        self.category = {self.folder[i].split('/')[-2]: i for i in range(len(self.folder))}
+
+    def __len__(self) -> int:
+        return len(self.data_list)
+
+    def __getitem__(self, idx: int):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        sample_dir = self.data_list[idx]
+        y = self.category[sample_dir.split('/')[-2]]
+        mat = sio.loadmat(sample_dir)
+        if 'CSIamp' not in mat:
+            raise KeyError(f"CSIamp not found in {sample_dir}")
+        x = mat['CSIamp']
+        # Normalize
+        x = (x - CSI_DEFAULT_MEAN) / CSI_DEFAULT_STD
+        # Ensure 3D shape (streams, 114, 500)
+        x = np.array(x)
+        if x.ndim == 2:
+            # (S, T) -> (1, S, T)
+            x = x[None, ...]
+        if x.shape[-2:] != (114, 500):
+            # try to transpose if common alternative (500,114)
+            if x.shape[-2:] == (500, 114):
+                x = np.transpose(x, (0, 2, 1))
+            else:
+                raise ValueError(f"Unexpected CSIamp shape {x.shape} in {sample_dir}")
+        if self.tile_to_three and x.shape[0] == 1:
+            x = np.repeat(x, 3, axis=0)
+        x = torch.FloatTensor(x)
+        return x, y

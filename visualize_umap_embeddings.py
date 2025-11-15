@@ -341,7 +341,7 @@ def main():
     parser.add_argument(
         "--dataset",
         default="NTU-Fi-HumanID",
-        choices=["UT_HAR_data", "NTU-Fi-HumanID", "NTU-Fi_HAR", "Widar"],
+        choices=["UT_HAR_data", "NTU-Fi-HumanID", "NTU-Fi_HAR", "Widar", "APPLIED"],
         help="Dataset name passed to util.load_data_n_model.",
     )
     parser.add_argument(

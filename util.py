@@ -6,7 +6,7 @@ from self_supervised_model import *
 import torch
 
 def load_data_n_model(dataset_name, model_name, root):
-    classes = {'UT_HAR_data':7,'NTU-Fi-HumanID':14,'NTU-Fi_HAR':6,'Widar':22}
+    classes = {'UT_HAR_data':7,'NTU-Fi-HumanID':14,'NTU-Fi_HAR':6,'Widar':22,'APPLIED':3}
     if model_name == 'SSM' and dataset_name != 'NTU-Fi-HumanID':
         raise ValueError("SSM model is only implemented for NTU-Fi-HumanID.")
     if dataset_name == 'UT_HAR_data':
@@ -227,6 +227,65 @@ def load_data_n_model(dataset_name, model_name, root):
             print("using model: ViT")
             model = Widar_ViT(num_classes=num_classes)
             train_epoch = 200
+        return train_loader, test_loader, model, train_epoch
+
+    elif dataset_name == 'APPLIED':
+        print('using dataset: APPLIED (custom measured)')
+        num_classes = classes['APPLIED']
+        # Use CSI_Ready_Dataset: expects pre-shaped CSIamp with (streams,114,500)
+        # but will tile 1-stream -> 3-stream to match existing models.
+        train_loader = torch.utils.data.DataLoader(dataset=CSI_Ready_Dataset(root + 'APPLIED/train_amp/'), batch_size=32, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(dataset=CSI_Ready_Dataset(root + 'APPLIED/test_amp/'), batch_size=64, shuffle=False)
+        if model_name == 'MLP':
+            print("using model: MLP")
+            model = NTU_Fi_MLP(num_classes)
+            train_epoch = 50
+        elif model_name == 'LeNet':
+            print("using model: LeNet")
+            model = NTU_Fi_LeNet(num_classes)
+            train_epoch = 50
+        elif model_name == 'ResNet18':
+            print("using model: ResNet18")
+            model = NTU_Fi_ResNet18(num_classes)
+            train_epoch = 50
+        elif model_name == 'ResNet50':
+            print("using model: ResNet50")
+            model = NTU_Fi_ResNet50(num_classes)
+            train_epoch = 60
+        elif model_name == 'ResNet101':
+            print("using model: ResNet101")
+            model = NTU_Fi_ResNet101(num_classes)
+            train_epoch = 60
+        elif model_name == 'RNN':
+            print("using model: RNN")
+            model = NTU_Fi_RNN(num_classes)
+            train_epoch = 80
+        elif model_name == 'GRU':
+            print("using model: GRU")
+            model = NTU_Fi_GRU(num_classes)
+            train_epoch = 50
+        elif model_name == 'LSTM':
+            print("using model: LSTM")
+            model = NTU_Fi_LSTM(num_classes)
+            train_epoch = 50
+        elif model_name == 'BiLSTM':
+            print("using model: BiLSTM")
+            model = NTU_Fi_BiLSTM(num_classes)
+            train_epoch = 50
+        elif model_name == 'CNN+GRU':
+            print("using model: CNN+GRU")
+            model = NTU_Fi_CNN_GRU(num_classes)
+            train_epoch = 60
+        elif model_name == 'ViT':
+            print("using model: ViT")
+            model = NTU_Fi_ViT(num_classes=num_classes)
+            train_epoch = 50
+        elif model_name == 'Mamba':
+            print("using model: Mamba")
+            model = NTU_Fi_Mamba(num_classes)
+            train_epoch = 60
+        else:
+            raise ValueError(f"Unsupported model for APPLIED: {model_name}")
         return train_loader, test_loader, model, train_epoch
 
 

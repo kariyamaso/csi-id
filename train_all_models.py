@@ -28,6 +28,7 @@ import subprocess
 import sys
 from typing import Iterable, List
 
+# Full union of models across datasets
 ALL_MODELS: List[str] = [
     "MLP",
     "LeNet",
@@ -43,6 +44,32 @@ ALL_MODELS: List[str] = [
     "SSM",
     "Mamba",
 ]
+
+
+def supported_models_for(dataset: str) -> List[str]:
+    """Return models compatible with the given dataset per util.load_data_n_model."""
+    base = [
+        "MLP",
+        "LeNet",
+        "ResNet18",
+        "ResNet50",
+        "ResNet101",
+        "RNN",
+        "GRU",
+        "LSTM",
+        "BiLSTM",
+        "CNN+GRU",
+        "ViT",
+    ]
+    if dataset == "NTU-Fi-HumanID":
+        return base + ["SSM", "Mamba"]
+    if dataset == "NTU-Fi_HAR":
+        return base + ["Mamba"]  # SSM not supported
+    if dataset == "APPLIED":
+        return base + ["Mamba"]  # SSM not supported
+    if dataset in ("UT_HAR_data", "Widar"):
+        return base  # No SSM/Mamba
+    return base
 
 
 def run_command(cmd: List[str], log_path: pathlib.Path) -> int:
@@ -64,14 +91,14 @@ def main():
     parser.add_argument(
         "--dataset",
         default="NTU-Fi-HumanID",
-        choices=["UT_HAR_data", "NTU-Fi-HumanID", "NTU-Fi_HAR", "Widar"],
+        choices=["UT_HAR_data", "NTU-Fi-HumanID", "NTU-Fi_HAR", "Widar", "APPLIED"],
         help="Dataset argument passed to run.py.",
     )
     parser.add_argument(
         "--models",
         nargs="+",
-        default=ALL_MODELS,
-        help="Subset of models to train. Defaults to all SenseFi models.",
+        default=None,
+        help="Subset of models to train. Defaults to all supported models for the dataset.",
     )
     parser.add_argument(
         "--saveckpt",
@@ -96,8 +123,18 @@ def main():
     args = parser.parse_args()
 
     timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # Determine model list, filtering out unsupported ones
+    default_models = supported_models_for(args.dataset)
+    models: List[str] = args.models if args.models else default_models
+    unsupported = [m for m in models if m not in supported_models_for(args.dataset)]
+    if unsupported:
+        print(f"[warn] Skipping unsupported for {args.dataset}: {', '.join(unsupported)}")
+        models = [m for m in models if m not in unsupported]
+    if not models:
+        print("[error] No models to train after filtering.")
+        sys.exit(1)
     failures: List[str] = []
-    for model in args.models:
+    for model in models:
         log_path = pathlib.Path(args.logdir) / args.dataset / f"{timestamp}_{model}.log"
         cmd = [
             args.python,

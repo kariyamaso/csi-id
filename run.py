@@ -1,4 +1,5 @@
 import argparse
+import glob
 import datetime as dt
 import os
 import sys
@@ -8,8 +9,10 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import scipy.io as sio
 
 from util import load_data_n_model
+import dataset as csi_dataset
 
 
 class _Tee:
@@ -82,7 +85,7 @@ def test(model, tensor_loader, criterion, device):
     
 def parse_args():
     parser = argparse.ArgumentParser('WiFi Imaging Benchmark')
-    parser.add_argument('--dataset', choices = ['UT_HAR_data','NTU-Fi-HumanID','NTU-Fi_HAR','Widar'])
+    parser.add_argument('--dataset', choices = ['UT_HAR_data','NTU-Fi-HumanID','NTU-Fi_HAR','Widar','APPLIED'])
     parser.add_argument('--model', choices = ['MLP','LeNet','ResNet18','ResNet50','ResNet101','RNN','GRU','LSTM','BiLSTM', 'CNN+GRU','ViT','SSM','Mamba'])
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to a pretrained state_dict to load before training.')
     parser.add_argument('--eval-only', action='store_true', help='Skip training and only run evaluation.')
@@ -94,6 +97,37 @@ def parse_args():
 
 def run_experiment(args):
     root = './Data/' 
+    # If using APPLIED and normalization not specified, compute from train split
+    if args.dataset == 'APPLIED' and not (os.getenv('NTU_FI_NORM_MEAN') and os.getenv('NTU_FI_NORM_STD')):
+        split_dir = os.path.join(root, 'APPLIED', 'train_amp')
+        files = sorted(glob.glob(os.path.join(split_dir, '*', '*.mat')))
+        if files:
+            total = 0
+            s = 0.0
+            s2 = 0.0
+            for path in files:
+                mat = sio.loadmat(path)
+                if 'CSIamp' not in mat:
+                    continue
+                x = mat['CSIamp']
+                try:
+                    x = x.reshape(3,114,500)
+                except Exception:
+                    pass
+                x = x.astype(np.float64, copy=False)
+                s += x.sum()
+                s2 += np.square(x, dtype=np.float64).sum()
+                total += x.size
+            if total > 0:
+                mean = s/total
+                var = max(s2/total - mean*mean, 0.0)
+                std = float(np.sqrt(var)) if var>0 else 1.0
+                print(f"[info] APPLIED normalization mean={mean:.4f} std={std:.4f}")
+                try:
+                    csi_dataset.set_csi_normalization(float(mean), float(std))
+                except Exception:
+                    os.environ['NTU_FI_NORM_MEAN'] = str(float(mean))
+                    os.environ['NTU_FI_NORM_STD'] = str(float(std))
     train_loader, test_loader, model, train_epoch = load_data_n_model(args.dataset, args.model, root)
     criterion = nn.CrossEntropyLoss()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
