@@ -212,17 +212,18 @@ def plot_training_curves(
         labels,
         loc="upper center",
         ncol=4,
-        bbox_to_anchor=(0.5, 1.04),
+        bbox_to_anchor=(0.5, 1.08),
         fontsize="small",
     )
-    plt.tight_layout(rect=(0, 0, 1, 0.86))
+    # leave extra headroom so there is space above the legend as well
+    plt.tight_layout(rect=(0, 0, 1, 0.80))
     # Ensure the figure-level legend is included in the bounding box
     fig.savefig(
         out_path,
         dpi=200,
         bbox_inches="tight",
         bbox_extra_artists=(legend,),
-        pad_inches=0.3,
+        pad_inches=0.6,
     )
     plt.close(fig)
 
