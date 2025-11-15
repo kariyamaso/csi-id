@@ -226,9 +226,22 @@ def main():
     src_ckpt = args.source_ckpt or auto_source_ckpt(args.model, args.ckptdir)
     if src_ckpt and src_ckpt.exists():
         print(f"Loading source checkpoint: {src_ckpt}")
-        state = torch.load(src_ckpt, map_location=device)
-        # Load with strict=False to ignore classifier mismatch
-        model.load_state_dict(state, strict=False)
+        raw_state = torch.load(src_ckpt, map_location=device)
+        # Filter out keys with shape mismatch (e.g., classifier head)
+        tgt_state = model.state_dict()
+        filt_state = {}
+        skipped: List[str] = []
+        for k, v in raw_state.items():
+            if k in tgt_state and hasattr(v, 'shape') and getattr(tgt_state[k], 'shape', None) == v.shape:
+                filt_state[k] = v
+            else:
+                skipped.append(k)
+        missing = [k for k in tgt_state.keys() if k not in filt_state]
+        print(
+            f"Loaded {len(filt_state)}/{len(raw_state)} keys from checkpoint; "
+            f"skipped {len(skipped)} (likely classifier head)."
+        )
+        model.load_state_dict(filt_state, strict=False)
     else:
         print("[warn] No source checkpoint found. Proceeding from random init.")
 
@@ -254,4 +267,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
