@@ -1,0 +1,106 @@
+% !TEX program = lualatex
+% LuaLaTeX + luatexja で日本語を安全に組版します。
+\documentclass[11pt]{ltjsarticle}
+\usepackage{luatexja-fontspec}
+\usepackage{geometry}
+\geometry{margin=25mm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\sisetup{round-mode=places,round-precision=1,detect-all}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\title{Mamba による WiFi CSI 人物認証：NTU-Fi HumanID における比較評価}
+\author{苅山湊（東京大学 工学部システム創成学科PSIコース）\\so-kari@g.ecc.u-tokyo.ac.jp}
+\date{2025年11月14日}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+本稿では、WiFi のチャネル状態情報（CSI）に対し、小規模な Mamba（Selective State Space Model）による識別器を提案する。\
+NTU-Fi HumanID データセット（前処理済み CSI）において、SenseFi の標準実装と同一の学習・評価条件で比較した結果、提案法は既存の RNN/GRU/LSTM/ViT 等を上回る精度を達成しSOTA性能を確認した。\
+\end{abstract}
+
+\section{はじめに}
+
+WiFi の\textbf{チャネル状態情報（Channel State Information; CSI）}は、OFDM の各サブキャリアにおける伝搬チャネルの複素応答を提供し、アンテナ間リンクや時間方向にわたる環境変化を高時空間分解能で捉える。この特性を利用した WiFi センシングは、(a) 既設の AP／端末を活用できる\textbf{低コスト・省配線}、(b) 可視画像を扱わない\textbf{プライバシー配慮}、(c) 夜間や遮蔽下でも動作し得る\textbf{堅牢性} といった利点から、スマートホーム、見守り、医療・介護、安全管理、オフィス最適化などへの応用が期待されている。さらに、無線 LAN 規格の高度化（例：Wi-Fi 6/6E/7 における帯域拡張・MIMO／ビームフォーミング強化）や、無線センシングの標準化動向（例：IEEE 802.11bf）も進展しており、\textbf{産業的な注目度が高まっている}。
+
+一方で、WiFi-CSI ベースの認識は、(i) マルチパスや壁・家具による反射の影響、(ii) 送受信機の設置差や環境ドリフトに起因するドメインシフト、(iii) 雑音や位相ラッピング、(iv) ラベル付きデータの希少性、といった課題に晒される。特に HumanID のような個人識別では、歩容の長期的な時間相関を捉えつつ、不要な高周波ノイズを抑える設計が重要である。
+
+既存ベンチマーク SenseFi では、CNN／RNN／GRU／LSTM／Transformer（ViT など）を共通条件で比較してきた。本稿では、近年Transformerを大体しうるアーキテクチャとしてや、時系列データに対する有望なモデルとして注目される選択的状態空間モデル（Selective State Space Model; \textbf{Mamba}）に着目し、HumanID タスクに適合する\textbf{小規模・高効率な時系列バックボーン}として導入する。標準実装と同一の評価プロトコル（NTU-Fi HumanID)に従い、既存手法との比較検証を行う。
+
+本研究の貢献は主として以下の二点である。
+\begin{itemize}
+  \item \textbf{Mamba の実装}: WiFi CSI HumanID タスク向けに軽量な Mamba バックボーンを実装し、既存ベンチマークに統合した。
+  \item \textbf{SOTA の達成}: SenseFi の共通プロトコル下で、既存モデルを上回る精度（テスト精度 \textbf{100\%}）を達成した。
+\end{itemize}
+
+
+\section{使用データセット}
+対象は NTU-Fi HumanID（\href{https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark}{https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark}）の前処理済み CSI（\(C=3,\ S=114,\ T=500)\)。\\
+SenseFi の実装に合わせ、\textbf{test\_amp を学習、train\_amp を評価}に用いる。クラス数は 14。学習サンプル数は \textbf{546}（test\_amp）、評価サンプル数は \textbf{295}（train\_amp）である。
+
+（\textit{注}: 公式配布の preprocessed CSI データは \texttt{train}/\texttt{test} の命名が逆転しているため、本研究では \texttt{test\_amp} を学習、\texttt{train\_amp} を評価に使用している。これは公式 GitHub リポジトリの issue でも複数報告されており、サンプル数の整合からも確認できる。）
+
+
+\section{提案手法}
+\subsection*{全体構成と形状の流れ}
+CSI を時系列ベクトルに直結してから Mamba でモデリングする。処理列と形状は以下のとおり。
+\begin{enumerate}
+  \item \textbf{リシェイプと転置}: \((B, C, S, T)\) を \((B, C\!\times\!S, T)\) に再解釈し、時間主系列 \((B, T, C\!\times\!S)\) へ転置。\newline
+        実装：\texttt{view(B, 3*114, 500)} → \texttt{permute(0, 2, 1)}。
+  \item \textbf{時系列埋め込み}: \texttt{Linear(342→d\_model)} の後に \texttt{LayerNorm(d\_model)} を適用し、時刻毎の表現を整える。\newline
+        入出力：\((B, T, 342) \to (B, T, d\_\mathrm{model})\)。
+  \item \textbf{Mamba バックボーン（L 層）}: 各層は Pre-Norm 残差 Mamba のみで構成（FFN は付与しない）。\newline
+        \(y = x + \mathrm{Dropout}(\mathrm{Mamba}(\mathrm{LN}(x)))\)。
+  \item \textbf{正規化と時間プーリング}: \texttt{LayerNorm(d\_model)} の後、\(\mathrm{mean}_t\) で \((B, d\_\mathrm{model})\) を得る。
+  \item \textbf{分類ヘッド}: \texttt{Linear(d\_model→d\_model/2)}→\texttt{GELU}→\texttt{Dropout(dropout)}→\texttt{Linear(d\_model/2→14)}。
+\end{enumerate}
+
+\subsection*{MambaEncoderBlock の構成}
+各ブロックは \texttt{LayerNorm(d\_model)}→\texttt{Mamba(d\_model, d\_state, d\_conv, expand)}→\texttt{Dropout}→残差加算の一段であり、単純かつ計算効率が高い（FFN は省略）。
+
+\subsection*{ハイパーパラメータと学習設定}
+\begin{itemize}
+  \item モデル：\(d\_\mathrm{model}=256,\ L=4,\ d\_\mathrm{state}=64,\ d\_\mathrm{conv}=4,\ \mathrm{expand}=2,\ \mathrm{dropout}=0.1\)。
+  \item 正則化：ブロック出力に \texttt{Dropout(0.1)}、ヘッド中間に \texttt{Dropout(0.1)}。
+  \item 学習：\texttt{Adam}（学習率 \(1\times10^{-3}\)）、損失は \texttt{CrossEntropyLoss}。\texttt{DataLoader} はバッチサイズ 64、エポックは HumanID で 75。
+\end{itemize}
+
+\section{実験結果}
+学習・評価ログはスクリプト（\texttt{run.py} および \texttt{train\_all\_models.py}）で収集し、\texttt{plot\_ntu\_fi\_results.py} で可視化した。図\ref{fig:bar} にモデル別の検証精度（= train\_amp 上のテスト精度）を、図\ref{fig:curves} に学習曲線を示す。数値表は表\ref{tab:results} にまとめる。
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{figures/ntu_fi_results/validation_accuracy_bar.png}
+  \caption{NTU-Fi HumanID における検証精度（train\_amp）。}
+  \label{fig:bar}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{figures/ntu_fi_results/training_curves.png}
+  \caption{学習曲線（左：学習精度，右：学習損失）。}
+  \label{fig:curves}
+\end{figure}
+
+\begin{table}[t]
+  \centering
+  \caption{各モデルの検証精度と損失（ログから集計）。}
+  \label{tab:results}
+  \input{figures/ntu_fi_results/results.tex}
+\end{table}
+
+\section{考察}
+提案法は、(i) Conv2D による前段のノイズ抑制、(ii) 小規模 Mamba による長期依存の効率的モデリング、の相補効果により、少データ設定でも高い識別精度を示した。今後は、軽量な注意プーリングやメトリック学習（ArcFace 等）の併用、汎化評価（別セッション／デバイス）を検討する。
+
+\section{再現性と実装}
+学習・評価は \texttt{python run.py --dataset NTU-Fi-HumanID --model Mamba} で実行し、\texttt{--log-dir} を指定してログを保存した。図表生成は \texttt{plot\_ntu\_fi\_results.py} と、付属の表出力スクリプトを用いる。環境は CUDA 13.0, PyTorch 2.9.1+cu130。\
+Mamba 実装は \texttt{mamba-ssm} を用い、ビルド時に PyTorch と CUDA バージョンの整合を取った。
+
+\section{結論}
+HumanID タスクに特化した小規模 Mamba は、既存モデルを上回る SOTA の精度を達成した。CSI 信号に対する軽量な前処理＋選択的状態空間モデルの組合せは、カメラレスな人認識において有望である。
+
+\end{document}
