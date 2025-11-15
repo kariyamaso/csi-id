@@ -6,7 +6,7 @@ This helper collects the per-epoch accuracy/loss curves from every
 new SSM model), builds:
 
 1. A bar chart comparing validation accuracies across models.
-2. Combined learning-curve plots (accuracy + loss) showing every model.
+2. Separate learning-curve plots for training accuracy and training loss.
 
 Usage
 -----
@@ -180,51 +180,51 @@ def plot_validation_bar(
     plt.close(fig)
 
 
-def plot_training_curves(
+def plot_training_accuracy(
     results: Dict[str, Dict[str, object]],
     out_path: pathlib.Path,
     palette: Dict[str, tuple],
 ) -> None:
-    """Plot accuracy + loss learning curves for every model."""
-    fig = plt.figure(figsize=(14, 6))
-    ax_acc = plt.subplot(1, 2, 1)
-    ax_loss = plt.subplot(1, 2, 2)
+    """Plot training accuracy for every model in a single figure.
 
+    Legend is placed inside the axes at bottom-right to avoid being cropped.
+    """
+    fig, ax = plt.subplots(figsize=(8, 5))
     for model, stats in results.items():
         epochs = stats["epochs"]
         color = palette[model]
-        ax_acc.plot(epochs, [a * 100 for a in stats["train_acc"]], label=model, color=color)
-        ax_loss.plot(epochs, stats["train_loss"], label=model, color=color)
+        ax.plot(epochs, [a * 100 for a in stats["train_acc"]], label=model, color=color)
+    ax.set_title("Training Accuracy vs. Epoch")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Accuracy (%)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="lower right", fontsize="small", frameon=True)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
+    plt.close(fig)
 
-    ax_acc.set_title("Training Accuracy vs. Epoch")
-    ax_acc.set_xlabel("Epoch")
-    ax_acc.set_ylabel("Accuracy (%)")
-    ax_acc.grid(True, alpha=0.3)
 
-    ax_loss.set_title("Training Loss vs. Epoch")
-    ax_loss.set_xlabel("Epoch")
-    ax_loss.set_ylabel("Cross-Entropy Loss")
-    ax_loss.grid(True, alpha=0.3)
+def plot_training_loss(
+    results: Dict[str, Dict[str, object]],
+    out_path: pathlib.Path,
+    palette: Dict[str, tuple],
+) -> None:
+    """Plot training loss for every model in a single figure.
 
-    handles, labels = ax_acc.get_legend_handles_labels()
-    legend = plt.figlegend(
-        handles,
-        labels,
-        loc="upper center",
-        ncol=4,
-        bbox_to_anchor=(0.5, 1.08),
-        fontsize="small",
-    )
-    # leave extra headroom so there is space above the legend as well
-    plt.tight_layout(rect=(0, 0, 1, 0.80))
-    # Ensure the figure-level legend is included in the bounding box
-    fig.savefig(
-        out_path,
-        dpi=200,
-        bbox_inches="tight",
-        bbox_extra_artists=(legend,),
-        pad_inches=0.6,
-    )
+    Legend is placed inside the axes at top-right to avoid being cropped.
+    """
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for model, stats in results.items():
+        epochs = stats["epochs"]
+        color = palette[model]
+        ax.plot(epochs, stats["train_loss"], label=model, color=color)
+    ax.set_title("Training Loss vs. Epoch")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Cross-Entropy Loss")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right", fontsize="small", frameon=True)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
@@ -266,15 +266,18 @@ def main():
     results = collect_logs(args.log_dir)
 
     bar_path = args.out_dir / "validation_accuracy_bar.png"
-    curves_path = args.out_dir / "training_curves.png"
+    acc_path = args.out_dir / "training_accuracy.png"
+    loss_path = args.out_dir / "training_loss.png"
     metrics_path = args.out_dir / "parsed_metrics.json"
 
     palette = build_model_palette(list(results.keys()))
     plot_validation_bar(results, bar_path, palette)
-    plot_training_curves(results, curves_path, palette)
+    plot_training_accuracy(results, acc_path, palette)
+    plot_training_loss(results, loss_path, palette)
     save_metrics(results, metrics_path)
     print(f"Wrote validation chart -> {bar_path}")
-    print(f"Wrote training curves -> {curves_path}")
+    print(f"Wrote training accuracy -> {acc_path}")
+    print(f"Wrote training loss -> {loss_path}")
     print(f"Wrote metrics dump -> {metrics_path}")
 
 
