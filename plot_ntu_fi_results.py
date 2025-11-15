@@ -176,7 +176,7 @@ def plot_validation_bar(
         borderaxespad=0,
     )
     fig.tight_layout(rect=(0, 0, 0.94, 1))
-    fig.savefig(out_path, dpi=200)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
@@ -215,8 +215,8 @@ def plot_training_curves(
         bbox_to_anchor=(0.5, 1.02),
         fontsize="small",
     )
-    plt.tight_layout(rect=(0, 0, 1, 0.92))
-    plt.savefig(out_path, dpi=200)
+    plt.tight_layout(rect=(0, 0, 1, 0.88))
+    plt.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close()
 
 

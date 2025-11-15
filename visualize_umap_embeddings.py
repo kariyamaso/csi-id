@@ -217,10 +217,17 @@ def plot_umap(
     ax.set_xlabel("UMAP-1")
     ax.set_ylabel("UMAP-2")
     ax.grid(True, alpha=0.2)
-    ax.legend(title="Class", loc="lower right", fontsize="small")
+    # Place legend outside to avoid overlapping the scatter
+    ax.legend(
+        title="Class",
+        loc="lower left",
+        bbox_to_anchor=(1.01, 0.0),
+        fontsize="small",
+        borderaxespad=0,
+    )
     plt.tight_layout(rect=(0, 0, 0.86, 1))
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=200)
+    plt.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close()
 
 
@@ -287,9 +294,9 @@ def plot_comparison_grid(
         fontsize="small",
         borderaxespad=0,
     )
-    plt.tight_layout(rect=(0, 0, 0.9, 1))
+    plt.tight_layout(rect=(0, 0, 0.88, 1))
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
