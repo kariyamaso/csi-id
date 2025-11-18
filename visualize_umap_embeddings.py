@@ -5,8 +5,9 @@ This script extracts intermediate embeddings from selected models on a chosen
 dataset split and runs UMAP to project them into 2D for visualization.
 
 Defaults are tuned for NTU-Fi HumanID and the SenseFi-style model zoo in this
-repo. It can automatically load pretrained checkpoints from `model_pt/` when
-available, falling back to randomly initialized weights otherwise.
+repo. It can automatically load pretrained checkpoints from dataset-specific
+directories (e.g., `model_pt/` for HumanID, `model_pt_HAR/` for NTU-Fi_HAR)
+when available, falling back to randomly initialized weights otherwise.
 
 Usage examples
 --------------
@@ -37,6 +38,7 @@ import argparse
 import os
 import pathlib
 import sys
+from dataclasses import dataclass
 from typing import Dict, Iterable, List, Tuple, Optional
 import glob
 
@@ -75,6 +77,24 @@ except Exception as e:  # pragma: no cover - optional dependency
 from util import load_data_n_model
 import dataset as csi_dataset
 from NTU_Fi_model import NTU_Fi_GRU, NTU_Fi_ViT, NTU_Fi_Mamba
+
+
+@dataclass(frozen=True)
+class DatasetDefaults:
+    out_dir: pathlib.Path
+    checkpoint_dir: pathlib.Path
+
+
+DATASET_DEFAULTS: Dict[str, DatasetDefaults] = {
+    "NTU-Fi-HumanID": DatasetDefaults(
+        out_dir=pathlib.Path("figures/ntu_fi_results"),
+        checkpoint_dir=pathlib.Path("model_pt"),
+    ),
+    "NTU-Fi_HAR": DatasetDefaults(
+        out_dir=pathlib.Path("figures/ntu_fi_har_results"),
+        checkpoint_dir=pathlib.Path("model_pt_HAR"),
+    ),
+}
 
 
 def _auto_checkpoint_path(dataset: str, model_name: str, ckpt_dir: pathlib.Path) -> pathlib.Path:
@@ -367,14 +387,14 @@ def main():
     parser.add_argument(
         "--checkpoint-dir",
         type=pathlib.Path,
-        default=pathlib.Path("model_pt"),
-        help="Directory containing <dataset>_<model>.pt checkpoints.",
+        default=None,
+        help="Directory containing <dataset>_<model>.pt checkpoints. Defaults follow the dataset profile.",
     )
     parser.add_argument(
         "--out-dir",
         type=pathlib.Path,
-        default=pathlib.Path("figures/ntu_fi_results"),
-        help="Directory to save UMAP figures.",
+        default=None,
+        help="Directory to save UMAP figures. Defaults follow the dataset profile.",
     )
     parser.add_argument(
         "--neighbors",
@@ -402,8 +422,15 @@ def main():
     )
     args = parser.parse_args()
 
+    profile = DATASET_DEFAULTS.get(
+        args.dataset,
+        DatasetDefaults(out_dir=pathlib.Path("figures"), checkpoint_dir=pathlib.Path("model_pt")),
+    )
+    out_dir = args.out_dir if args.out_dir else profile.out_dir
+    checkpoint_dir = args.checkpoint_dir if args.checkpoint_dir else profile.checkpoint_dir
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # Ensure normalization for APPLIED dataset, mirroring run.py behavior
     data_root = "./Data/"
@@ -478,7 +505,7 @@ def main():
             continue
 
         # Try to load checkpoint if available
-        ckpt_path = _auto_checkpoint_path(args.dataset, model_name, args.checkpoint_dir)
+        ckpt_path = _auto_checkpoint_path(args.dataset, model_name, checkpoint_dir)
         if ckpt_path.exists():
             try:
                 state_dict = torch.load(ckpt_path, map_location=device)
@@ -511,12 +538,12 @@ def main():
     # Write individual panels using the same color map/names
     for model_name, Z, y in panels:
         title = f"{args.dataset} — {model_name}"
-        out_path = args.out_dir / f"umap_{args.dataset}_{model_name}.png"
+        out_path = out_dir / f"umap_{args.dataset}_{model_name}.png"
         plot_umap(Z, y, title, out_path, color_map=color_map, class_names=class_names, class_order=class_order)
         print(f"[ok] Wrote {out_path}")
 
     # Combined comparison figure
-    comp_path = args.out_dir / f"umap_{args.dataset}_comparison.png"
+    comp_path = out_dir / f"umap_{args.dataset}_comparison.png"
     plot_comparison_grid(panels, comp_path, color_map=color_map, class_names=class_names, class_order=class_order)
     print(f"[ok] Wrote {comp_path}")
 

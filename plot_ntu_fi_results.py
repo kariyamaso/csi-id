@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Parse SenseFi training logs and visualize NTU-Fi HumanID results.
+"""Parse SenseFi training logs and visualize NTU-Fi HumanID or HAR results.
 
-This helper collects the per-epoch accuracy/loss curves from every
-`logs/train_all/NTU-Fi-HumanID/result/*.log` file (i.e., the runs without the
-new SSM model), builds:
+This helper collects the per-epoch accuracy/loss curves from the SenseFi
+training logs (e.g., `logs/train_all/<dataset>/result/*.log`) and builds:
 
 1. A bar chart comparing validation accuracies across models.
 2. Separate learning-curve plots for training accuracy and training loss.
@@ -11,9 +10,8 @@ new SSM model), builds:
 Usage
 -----
 source .venv/bin/activate
-python plot_ntu_fi_results.py \
-    --log-dir logs/train_all/NTU-Fi-HumanID/result \
-    --out-dir figures/ntu_fi_results
+python plot_ntu_fi_results.py --dataset NTU-Fi-HumanID
+python plot_ntu_fi_results.py --dataset NTU-Fi_HAR --log-dir NTU-Fi_HAR
 """
 
 from __future__ import annotations
@@ -23,7 +21,8 @@ import json
 import os
 import pathlib
 import re
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
 # Configure cache dirs prior to importing Matplotlib so fontconfig does not try
 # to write into read-only system locations.
@@ -88,17 +87,33 @@ def parse_log(path: pathlib.Path) -> Dict[str, object]:
     }
 
 
-def collect_logs(log_dir: pathlib.Path) -> Dict[str, Dict[str, object]]:
-    """Parse every *.log file inside log_dir and return keyed by model name."""
+def collect_logs(
+    log_dir: pathlib.Path,
+    only_prefix: str | None = None,
+    exclude_models: List[str] | None = None,
+) -> Dict[str, Dict[str, object]]:
+    """Parse *.log files inside log_dir with optional filename prefix filter.
+
+    - only_prefix: match files whose basename starts with this prefix
+    - exclude_models: list of model names (suffix after first underscore) to skip
+    """
     results: Dict[str, Dict[str, object]] = {}
     for log_path in sorted(log_dir.glob("*.log")):
-        model_name = log_path.stem.split("_", 1)[1]
+        stem = log_path.stem
+        if only_prefix and not stem.startswith(only_prefix.rstrip("_")):
+            continue
+        # model name is suffix after first underscore
+        parts = stem.split("_", 1)
+        model_name = parts[1] if len(parts) > 1 else stem
+        if exclude_models and model_name in exclude_models:
+            continue
         try:
             results[model_name] = parse_log(log_path)
         except ValueError as err:
             print(f"[warn] {err}")
     if not results:
-        raise RuntimeError(f"No valid log files found in {log_dir}")
+        prefix_msg = f" with prefix {only_prefix}" if only_prefix else ""
+        raise RuntimeError(f"No valid log files found in {log_dir}{prefix_msg}")
     return results
 
 
@@ -139,10 +154,36 @@ def build_model_palette(models: List[str]) -> Dict[str, tuple]:
     return palette
 
 
+@dataclass(frozen=True)
+class DatasetProfile:
+    label: str
+    default_log_dir: pathlib.Path
+    default_out_dir: pathlib.Path
+    bar_xlim: Tuple[float, float] | None = None
+
+
+DATASET_PROFILES: Dict[str, DatasetProfile] = {
+    "NTU-Fi-HumanID": DatasetProfile(
+        label="NTU-Fi HumanID",
+        default_log_dir=pathlib.Path("logs/train_all/NTU-Fi-HumanID/result"),
+        default_out_dir=pathlib.Path("figures/ntu_fi_results"),
+        bar_xlim=(0, 108),
+    ),
+    "NTU-Fi_HAR": DatasetProfile(
+        label="NTU-Fi HAR",
+        default_log_dir=pathlib.Path("logs/train_all/NTU-Fi_HAR/result"),
+        default_out_dir=pathlib.Path("figures/ntu_fi_har_results"),
+        bar_xlim=(0, 105),
+    ),
+}
+
+
 def plot_validation_bar(
     results: Dict[str, Dict[str, object]],
     out_path: pathlib.Path,
     palette: Dict[str, tuple],
+    dataset_label: str,
+    xlim: Tuple[float, float] | None,
 ) -> None:
     """Create a horizontal bar chart of validation accuracies."""
     data = sorted(
@@ -157,8 +198,12 @@ def plot_validation_bar(
     fig, ax = plt.subplots(figsize=(14, 6))
     bars = ax.barh(models, accuracies_pct, color=colors, alpha=0.9)
     ax.set_xlabel("Validation Accuracy (%)")
-    ax.set_title("NTU-Fi HumanID Validation Accuracy")
-    ax.set_xlim(0, 108)
+    ax.set_title(f"{dataset_label} Validation Accuracy")
+    if xlim:
+        ax.set_xlim(*xlim)
+    else:
+        upper = max(accuracies_pct) if accuracies_pct else 100
+        ax.set_xlim(0, min(110, upper + 5))
     for bar, acc in zip(bars, accuracies_pct):
         ax.text(
             bar.get_width() + 1,
@@ -184,6 +229,7 @@ def plot_training_accuracy(
     results: Dict[str, Dict[str, object]],
     out_path: pathlib.Path,
     palette: Dict[str, tuple],
+    dataset_label: str,
 ) -> None:
     """Plot training accuracy for every model in a single figure.
 
@@ -194,7 +240,7 @@ def plot_training_accuracy(
         epochs = stats["epochs"]
         color = palette[model]
         ax.plot(epochs, [a * 100 for a in stats["train_acc"]], label=model, color=color)
-    ax.set_title("Training Accuracy vs. Epoch")
+    ax.set_title(f"{dataset_label} Training Accuracy vs. Epoch")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Accuracy (%)")
     ax.grid(True, alpha=0.3)
@@ -208,6 +254,7 @@ def plot_training_loss(
     results: Dict[str, Dict[str, object]],
     out_path: pathlib.Path,
     palette: Dict[str, tuple],
+    dataset_label: str,
 ) -> None:
     """Plot training loss for every model in a single figure.
 
@@ -218,12 +265,47 @@ def plot_training_loss(
         epochs = stats["epochs"]
         color = palette[model]
         ax.plot(epochs, stats["train_loss"], label=model, color=color)
-    ax.set_title("Training Loss vs. Epoch")
+    ax.set_title(f"{dataset_label} Training Loss vs. Epoch")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Cross-Entropy Loss")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper right", fontsize="small", frameon=True)
     fig.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
+    plt.close(fig)
+
+
+def plot_training_curves_combined(
+    results: Dict[str, Dict[str, object]],
+    out_path: pathlib.Path,
+    palette: Dict[str, tuple],
+    dataset_label: str,
+) -> None:
+    """Plot training accuracy and loss side-by-side in one figure."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    ax_acc, ax_loss = axes
+    # Accuracy subplot
+    for model, stats in results.items():
+        epochs = stats["epochs"]
+        color = palette[model]
+        ax_acc.plot(epochs, [a * 100 for a in stats["train_acc"]], label=model, color=color)
+    ax_acc.set_title(f"{dataset_label} Training Accuracy")
+    ax_acc.set_xlabel("Epoch")
+    ax_acc.set_ylabel("Accuracy (%)")
+    ax_acc.grid(True, alpha=0.3)
+    # Loss subplot
+    for model, stats in results.items():
+        epochs = stats["epochs"]
+        color = palette[model]
+        ax_loss.plot(epochs, stats["train_loss"], label=model, color=color)
+    ax_loss.set_title(f"{dataset_label} Training Loss")
+    ax_loss.set_xlabel("Epoch")
+    ax_loss.set_ylabel("Cross-Entropy Loss")
+    ax_loss.grid(True, alpha=0.3)
+    # Single shared legend
+    handles, labels = ax_acc.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=5, fontsize="small")
+    fig.tight_layout(rect=(0, 0.08, 1, 1))
     fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
@@ -249,36 +331,61 @@ def save_metrics(results: Dict[str, Dict[str, object]], out_path: pathlib.Path) 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--dataset",
+        choices=sorted(DATASET_PROFILES.keys()),
+        default="NTU-Fi-HumanID",
+        help="Which dataset's defaults to use for plotting metadata.",
+    )
+    parser.add_argument(
         "--log-dir",
         type=pathlib.Path,
-        default=pathlib.Path("logs/train_all/NTU-Fi-HumanID/result"),
-        help="Directory containing timestamped SenseFi log files.",
+        default=None,
+        help="Directory containing SenseFi log files. Defaults to the dataset profile.",
+    )
+    parser.add_argument(
+        "--only-prefix",
+        type=str,
+        default=None,
+        help="Only include logs whose basename starts with this prefix (e.g., 20251115-183157_).",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=None,
+        help="Model names to exclude (e.g., --exclude SSM). Can be repeated.",
     )
     parser.add_argument(
         "--out-dir",
         type=pathlib.Path,
-        default=pathlib.Path("figures/ntu_fi_results"),
-        help="Directory to store the generated figures.",
+        default=None,
+        help="Directory to store the generated figures. Defaults to the dataset profile.",
     )
     args = parser.parse_args()
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    results = collect_logs(args.log_dir)
+    profile = DATASET_PROFILES[args.dataset]
+    log_dir = args.log_dir if args.log_dir else profile.default_log_dir
+    out_dir = args.out_dir if args.out_dir else profile.default_out_dir
 
-    bar_path = args.out_dir / "validation_accuracy_bar.png"
-    acc_path = args.out_dir / "training_accuracy.png"
-    loss_path = args.out_dir / "training_loss.png"
-    metrics_path = args.out_dir / "parsed_metrics.json"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results = collect_logs(log_dir, only_prefix=args.only_prefix, exclude_models=args.exclude)
+
+    bar_path = out_dir / "validation_accuracy_bar.png"
+    acc_path = out_dir / "training_accuracy.png"
+    loss_path = out_dir / "training_loss.png"
+    metrics_path = out_dir / "parsed_metrics.json"
+    combined_path = out_dir / "training_curves.png"
 
     palette = build_model_palette(list(results.keys()))
-    plot_validation_bar(results, bar_path, palette)
-    plot_training_accuracy(results, acc_path, palette)
-    plot_training_loss(results, loss_path, palette)
+    plot_validation_bar(results, bar_path, palette, profile.label, profile.bar_xlim)
+    plot_training_accuracy(results, acc_path, palette, profile.label)
+    plot_training_loss(results, loss_path, palette, profile.label)
     save_metrics(results, metrics_path)
-    print(f"Wrote validation chart -> {bar_path}")
-    print(f"Wrote training accuracy -> {acc_path}")
-    print(f"Wrote training loss -> {loss_path}")
-    print(f"Wrote metrics dump -> {metrics_path}")
+    plot_training_curves_combined(results, combined_path, palette, profile.label)
+    print(f"[{profile.label}] Wrote validation chart -> {bar_path}")
+    print(f"[{profile.label}] Wrote training accuracy -> {acc_path}")
+    print(f"[{profile.label}] Wrote training loss -> {loss_path}")
+    print(f"[{profile.label}] Wrote metrics dump -> {metrics_path}")
+    print(f"[{profile.label}] Wrote combined training curves -> {combined_path}")
 
 
 if __name__ == "__main__":
