@@ -76,7 +76,16 @@ except Exception as e:  # pragma: no cover - optional dependency
 
 from util import load_data_n_model
 import dataset as csi_dataset
-from NTU_Fi_model import NTU_Fi_GRU, NTU_Fi_ViT, NTU_Fi_Mamba
+from NTU_Fi_model import (
+    NTU_Fi_BiLSTM,
+    NTU_Fi_CNN_GRU,
+    NTU_Fi_GRU,
+    NTU_Fi_LSTM,
+    NTU_Fi_Mamba,
+    NTU_Fi_RNN,
+    NTU_Fi_SSM,
+    NTU_Fi_ViT,
+)
 
 
 @dataclass(frozen=True)
@@ -102,22 +111,45 @@ def _auto_checkpoint_path(dataset: str, model_name: str, ckpt_dir: pathlib.Path)
     return ckpt_dir / f"{dataset}_{model_name}.pt"
 
 
+def _prepare_sequence_inputs(inputs: torch.Tensor) -> torch.Tensor:
+    """Reshape CSI tensor into (seq_len, batch, features) for RNN-style models."""
+    x = inputs.view(-1, 342, 500)
+    return x.permute(2, 0, 1)  # 500 x batch x 342
+
+
+def _last_hidden_state(recurrent_module: nn.Module, seq: torch.Tensor) -> torch.Tensor:
+    """Return the final hidden state for GRU/RNN/LSTM (matching each model's forward)."""
+    if isinstance(recurrent_module, nn.LSTM):
+        _, (ht, _) = recurrent_module(seq)
+    else:
+        _, ht = recurrent_module(seq)
+    return ht[-1]
+
+
 @torch.no_grad()
 def extract_features(
     model: nn.Module, inputs: torch.Tensor
 ) -> torch.Tensor:
     """Return a batch of embeddings before the final classifier.
 
-    Handles GRU, ViT, and Mamba as defined in NTU_Fi_model.py.
+    Handles the NTU-Fi model zoo (RNNs, Transformer, Mamba, etc.).
     """
     model.eval()
     if isinstance(model, NTU_Fi_GRU):
-        # Follow NTU_Fi_GRU.forward up to ht[-1]
-        x = inputs.view(-1, 342, 500)
-        x = x.permute(2, 0, 1)  # 500 x batch x 342
-        _, ht = model.gru(x)
-        feats = ht[-1]  # (batch, hidden)
-        return feats
+        seq = _prepare_sequence_inputs(inputs)
+        return _last_hidden_state(model.gru, seq)
+
+    if isinstance(model, NTU_Fi_RNN):
+        seq = _prepare_sequence_inputs(inputs)
+        return _last_hidden_state(model.rnn, seq)
+
+    if isinstance(model, NTU_Fi_LSTM):
+        seq = _prepare_sequence_inputs(inputs)
+        return _last_hidden_state(model.lstm, seq)
+
+    if isinstance(model, NTU_Fi_BiLSTM):
+        seq = _prepare_sequence_inputs(inputs)
+        return _last_hidden_state(model.lstm, seq)
 
     if isinstance(model, NTU_Fi_ViT):
         # model = nn.Sequential(PatchEmbedding, TransformerEncoder, ClassificationHead)
@@ -132,6 +164,27 @@ def extract_features(
         # Follow NTU_Fi_Mamba.forward up to pooled, normalized sequence
         b = inputs.size(0)
         seq = inputs.view(b, 3 * 114, 500).permute(0, 2, 1)  # (b, 500, 342)
+        seq = model.input_proj(seq)
+        for block in model.blocks:
+            seq = block(seq)
+        feats = model.norm(seq).mean(dim=1)
+        return feats
+
+    if isinstance(model, NTU_Fi_CNN_GRU):
+        batch_size = inputs.size(0)
+        x = inputs.view(batch_size, 3 * 114, 500).permute(0, 2, 1)  # (batch, 500, 342)
+        x = x.reshape(batch_size * 500, 1, 3 * 114)
+        x = model.encoder(x)
+        x = x.permute(0, 2, 1)
+        x = model.mean(x)
+        x = x.reshape(batch_size, 500, 8)
+        x = x.permute(1, 0, 2)  # 500 x batch x 8
+        _, ht = model.gru(x)
+        return ht[-1]
+
+    if isinstance(model, NTU_Fi_SSM):
+        b = inputs.size(0)
+        seq = inputs.view(b, 3 * 114, 500).permute(0, 2, 1)
         seq = model.input_proj(seq)
         for block in model.blocks:
             seq = block(seq)
