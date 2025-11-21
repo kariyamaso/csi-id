@@ -44,7 +44,6 @@ DEFAULT_MODELS: Dict[str, List[str]] = {
         "BiLSTM",
         "CNN+GRU",
         "ViT",
-        "SSM",
         "Mamba",
     ],
     "NTU-Fi_HAR": [
@@ -117,6 +116,8 @@ def generate_bar_and_curves(dataset: str, python_bin: str, log_dir: pathlib.Path
             str(log_dir / dataset),
             "--out-dir",
             str(out_dir),
+            "--exclude",
+            "SSM",
         ]
     )
     # Also write LaTeX table for convenience
@@ -247,6 +248,8 @@ def main() -> None:
         models = args.models if args.models else DEFAULT_MODELS.get(dataset, [])
         if not models:
             raise ValueError(f"No default models configured for dataset {dataset}")
+        # Hard-exclude SSM from all stages (training/plots).
+        models = [m for m in models if m != "SSM"]
 
         # 1) Train + save logs/ckpts
         if not args.skip_train:
