@@ -107,7 +107,10 @@ DATASET_DEFAULTS: Dict[str, DatasetDefaults] = {
 
 
 def _auto_checkpoint_path(dataset: str, model_name: str, ckpt_dir: pathlib.Path) -> pathlib.Path:
-    # Standard naming used in this repo's `model_pt/` directory
+    # Prefer seed-0 checkpoints when present; fall back to unseeded name.
+    seeded = ckpt_dir / f"{dataset}_{model_name}_s0.pt"
+    if seeded.exists():
+        return seeded
     return ckpt_dir / f"{dataset}_{model_name}.pt"
 
 

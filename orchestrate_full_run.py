@@ -75,7 +75,14 @@ def run_cmd(cmd: List[str], cwd: pathlib.Path | None = None, env: Dict[str, str]
         raise RuntimeError(f"Command failed with exit code {completed.returncode}: {' '.join(cmd)}")
 
 
-def train_models(dataset: str, models: Iterable[str], python_bin: str, log_dir: pathlib.Path, ckpt_dir: pathlib.Path) -> None:
+def train_models(
+    dataset: str,
+    models: Iterable[str],
+    seeds: Iterable[int] | None,
+    python_bin: str,
+    log_dir: pathlib.Path,
+    ckpt_dir: pathlib.Path,
+) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -92,6 +99,8 @@ def train_models(dataset: str, models: Iterable[str], python_bin: str, log_dir: 
     ]
     # train_all_models takes models via a single --models flag followed by values.
     cmd += ["--models", *models]
+    if seeds:
+        cmd += ["--seeds", *[str(s) for s in seeds]]
     run_cmd(cmd)
     print(f"[{dataset}] training completed. Logs -> {log_dir}/{dataset}/{timestamp}_*.log")
 
@@ -124,7 +133,9 @@ def generate_bar_and_curves(dataset: str, python_bin: str, log_dir: pathlib.Path
 
 
 def generate_confusion(dataset: str, python_bin: str, ckpt_dir: pathlib.Path, out_dir: pathlib.Path) -> None:
-    ckpt_path = ckpt_dir / f"{dataset}_Mamba.pt"
+    # Prefer seed 0 if present; otherwise fallback to unseeded filename.
+    ckpt_seed0 = ckpt_dir / f"{dataset}_Mamba_s0.pt"
+    ckpt_path = ckpt_seed0 if ckpt_seed0.exists() else ckpt_dir / f"{dataset}_Mamba.pt"
     run_cmd(
         [
             python_bin,
@@ -185,6 +196,13 @@ def main() -> None:
         help="Models to include in UMAP plots.",
     )
     parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=list(range(10)),
+        help="Seeds to run for each dataset (default: 0 1 2 3 4 5 6 7 8 9).",
+    )
+    parser.add_argument(
         "--artifact-root",
         type=pathlib.Path,
         default=None,
@@ -232,7 +250,7 @@ def main() -> None:
 
         # 1) Train + save logs/ckpts
         if not args.skip_train:
-            train_models(dataset, models, args.python, log_dir, ckpt_dir)
+            train_models(dataset, models, args.seeds, args.python, log_dir, ckpt_dir)
         else:
             print(f"[{dataset}] skipping training per --skip-train (expects logs in {log_dir/dataset})")
 

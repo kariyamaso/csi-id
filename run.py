@@ -5,6 +5,7 @@ import os
 import sys
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
+import random
 
 import numpy as np
 import torch
@@ -82,6 +83,22 @@ def test(model, tensor_loader, criterion, device):
     print("validation accuracy:{:.4f}, loss:{:.5f}".format(float(test_acc),float(test_loss)))
     return
 
+
+def set_seed(seed: int) -> None:
+    """Set RNG seeds for reproducibility."""
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    if torch.__version__ >= "2.0":
+        try:
+            torch.use_deterministic_algorithms(True)
+        except Exception:
+            pass
+
     
 def parse_args():
     parser = argparse.ArgumentParser('WiFi Imaging Benchmark')
@@ -92,10 +109,14 @@ def parse_args():
     parser.add_argument('--log-dir', type=str, default=None, help='Directory to store logs (mirrors train_all format).')
     parser.add_argument('--log-file', type=str, default=None, help='Explicit log file path. Overrides --log-dir if both are provided.')
     parser.add_argument('--save-ckpt', type=str, default=None, help='File path to save model.state_dict() after training. Ignored with --eval-only.')
+    parser.add_argument('--seed', type=int, default=None, help='Seed for reproducibility (applies to python/numpy/torch).')
     return parser.parse_args()
 
 
 def run_experiment(args):
+    if args.seed is not None:
+        set_seed(args.seed)
+
     root = './Data/' 
     # If using APPLIED and normalization not specified, compute from train split
     if args.dataset == 'APPLIED' and not (os.getenv('NTU_FI_NORM_MEAN') and os.getenv('NTU_FI_NORM_STD')):

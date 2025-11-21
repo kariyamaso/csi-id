@@ -22,7 +22,7 @@ import os
 import pathlib
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Iterable
 
 # Configure cache dirs prior to importing Matplotlib so fontconfig does not try
 # to write into read-only system locations.
@@ -38,6 +38,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def parse_log(path: pathlib.Path) -> Dict[str, object]:
@@ -87,34 +88,76 @@ def parse_log(path: pathlib.Path) -> Dict[str, object]:
     }
 
 
+def _parse_model_and_seed(stem: str) -> Tuple[str, Optional[int]]:
+    """Infer base model name and optional seed from a log filename stem.
+
+    Expected patterns:
+    - <timestamp>_<Model>
+    - <timestamp>_s<seed>_<Model>
+    """
+    parts = stem.split("_", 1)
+    if len(parts) == 1:
+        return stem, None
+    rest = parts[1]
+    if rest.startswith("s") and "_" in rest:
+        seed_part, model_part = rest.split("_", 1)
+        if seed_part[1:].isdigit():
+            return model_part, int(seed_part[1:])
+    return rest, None
+
+
 def collect_logs(
     log_dir: pathlib.Path,
     only_prefix: str | None = None,
     exclude_models: List[str] | None = None,
-) -> Dict[str, Dict[str, object]]:
-    """Parse *.log files inside log_dir with optional filename prefix filter.
-
-    - only_prefix: match files whose basename starts with this prefix
-    - exclude_models: list of model names (suffix after first underscore) to skip
-    """
-    results: Dict[str, Dict[str, object]] = {}
+) -> List[Dict[str, object]]:
+    """Parse *.log files inside log_dir with optional filename prefix filter."""
+    runs: List[Dict[str, object]] = []
     for log_path in sorted(log_dir.glob("*.log")):
         stem = log_path.stem
         if only_prefix and not stem.startswith(only_prefix.rstrip("_")):
             continue
-        # model name is suffix after first underscore
-        parts = stem.split("_", 1)
-        model_name = parts[1] if len(parts) > 1 else stem
+        model_name, seed = _parse_model_and_seed(stem)
         if exclude_models and model_name in exclude_models:
             continue
         try:
-            results[model_name] = parse_log(log_path)
+            stats = parse_log(log_path)
         except ValueError as err:
             print(f"[warn] {err}")
-    if not results:
+            continue
+        stats["model"] = model_name
+        stats["seed"] = seed
+        stats["log_path"] = str(log_path)
+        runs.append(stats)
+    if not runs:
         prefix_msg = f" with prefix {only_prefix}" if only_prefix else ""
         raise RuntimeError(f"No valid log files found in {log_dir}{prefix_msg}")
-    return results
+    return runs
+
+
+def aggregate_by_model(runs: Iterable[Dict[str, object]]) -> Dict[str, Dict[str, object]]:
+    """Group run stats by base model and compute mean/std of validation accuracy."""
+    grouped: Dict[str, List[Dict[str, object]]] = {}
+    for r in runs:
+        grouped.setdefault(r["model"], []).append(r)
+    aggregated: Dict[str, Dict[str, object]] = {}
+    for model, entries in grouped.items():
+        val_accs = [e["val_acc"] for e in entries]
+        val_losses = [e["val_loss"] for e in entries]
+        mean_acc = float(np.mean(val_accs))
+        std_acc = float(np.std(val_accs))
+        mean_loss = float(np.mean(val_losses))
+        std_loss = float(np.std(val_losses))
+        best_run = max(entries, key=lambda e: e["val_acc"])
+        aggregated[model] = {
+            "mean_val_acc": mean_acc,
+            "std_val_acc": std_acc,
+            "mean_val_loss": mean_loss,
+            "std_val_loss": std_loss,
+            "runs": entries,
+            "best_run": best_run,
+        }
+    return aggregated
 
 
 MAMBA_COLOR = "#e41a1c"  # strong red to highlight the new model prominently
@@ -167,13 +210,13 @@ DATASET_PROFILES: Dict[str, DatasetProfile] = {
         label="NTU-Fi HumanID",
         default_log_dir=pathlib.Path("logs/train_all/NTU-Fi-HumanID/result"),
         default_out_dir=pathlib.Path("figures/ntu_fi_results"),
-        bar_xlim=(0, 108),
+        bar_xlim=(0, 115),
     ),
     "NTU-Fi_HAR": DatasetProfile(
         label="NTU-Fi HAR",
         default_log_dir=pathlib.Path("logs/train_all/NTU-Fi_HAR/result"),
         default_out_dir=pathlib.Path("figures/ntu_fi_har_results"),
-        bar_xlim=(0, 105),
+        bar_xlim=(0, 115),
     ),
 }
 
@@ -203,7 +246,8 @@ def plot_validation_bar(
         ax.set_xlim(*xlim)
     else:
         upper = max(accuracies_pct) if accuracies_pct else 100
-        ax.set_xlim(0, min(110, upper + 5))
+        right = max(upper + 15, 115)
+        ax.set_xlim(0, right)
     for bar, acc in zip(bars, accuracies_pct):
         ax.text(
             bar.get_width() + 1,
@@ -220,6 +264,54 @@ def plot_validation_bar(
         fontsize="small",
         borderaxespad=0,
     )
+    fig.tight_layout(rect=(0, 0, 0.94, 1))
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
+    plt.close(fig)
+
+
+def plot_validation_bar_meanstd(
+    aggregated: Dict[str, Dict[str, object]],
+    out_path: pathlib.Path,
+    palette: Dict[str, tuple],
+    dataset_label: str,
+    xlim: Tuple[float, float] | None,
+) -> None:
+    """Create a horizontal bar chart of mean/std validation accuracies."""
+    data = sorted(
+        [
+            (model, stats["mean_val_acc"], stats["std_val_acc"])
+            for model, stats in aggregated.items()
+        ],
+        key=lambda item: item[1],
+    )
+    models, means, stds = zip(*data)
+    means_pct = [m * 100 for m in means]
+    stds_pct = [s * 100 for s in stds]
+    colors = [palette.get(model, "#377eb8") for model in models]
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    bars = ax.barh(models, means_pct, xerr=stds_pct, color=colors, alpha=0.9, capsize=6)
+    ax.set_xlabel("Validation Accuracy (%)")
+    ax.set_title(f"{dataset_label} Validation Accuracy (mean \u00b1 std)")
+    if xlim:
+        ax.set_xlim(*xlim)
+    else:
+        upper = max(m + s for m, s in zip(means_pct, stds_pct)) if means_pct else 100
+        right = max(upper + 5, 115)
+        ax.set_xlim(0, right)
+    ax.grid(axis="x", linestyle="--", alpha=0.4)
+    ax.invert_yaxis()
+
+    for bar, mean, std in zip(bars, means_pct, stds_pct):
+        ax.text(
+            mean + std + 0.5,
+            bar.get_y() + bar.get_height() / 2,
+            f"{mean:.1f}\u00b1{std:.1f}",
+            va="center",
+            ha="left",
+            fontsize=10,
+        )
+
     fig.tight_layout(rect=(0, 0, 0.94, 1))
     fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
@@ -310,22 +402,47 @@ def plot_training_curves_combined(
     plt.close(fig)
 
 
-def save_metrics(results: Dict[str, Dict[str, object]], out_path: pathlib.Path) -> None:
-    """Dump parsed metrics to JSON for downstream use."""
-    serializable = {
+def save_metrics(
+    best_results: Dict[str, Dict[str, object]],
+    aggregated: Dict[str, Dict[str, object]],
+    out_path: pathlib.Path,
+) -> None:
+    """Dump parsed metrics (best runs + aggregated stats) to JSON for downstream use."""
+    serializable_best = {
         model: {
-            **{
-                "epochs": stats["epochs"],
-                "train_acc": stats["train_acc"],
-                "train_loss": stats["train_loss"],
-            },
+            "seed": stats.get("seed"),
             "val_acc": stats["val_acc"],
             "val_loss": stats["val_loss"],
+            "epochs": stats["epochs"],
+            "train_acc": stats["train_acc"],
+            "train_loss": stats["train_loss"],
+            "log_path": stats.get("log_path"),
         }
-        for model, stats in results.items()
+        for model, stats in best_results.items()
     }
+    serializable_agg = {
+        model: {
+            "mean_val_acc": stats["mean_val_acc"],
+            "std_val_acc": stats["std_val_acc"],
+            "mean_val_loss": stats["mean_val_loss"],
+            "std_val_loss": stats["std_val_loss"],
+            "seeds": [r.get("seed") for r in stats["runs"]],
+            "runs": [
+                {
+                    "seed": r.get("seed"),
+                    "val_acc": r["val_acc"],
+                    "val_loss": r["val_loss"],
+                    "log_path": r.get("log_path"),
+                }
+                for r in stats["runs"]
+            ],
+        }
+        for model, stats in aggregated.items()
+    }
+    payload = {"best_runs": serializable_best, "aggregated": serializable_agg}
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w") as f:
-        json.dump(serializable, f, indent=2)
+        json.dump(payload, f, indent=2)
 
 
 def main():
@@ -367,21 +484,27 @@ def main():
     out_dir = args.out_dir if args.out_dir else profile.default_out_dir
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    results = collect_logs(log_dir, only_prefix=args.only_prefix, exclude_models=args.exclude)
+    runs = collect_logs(log_dir, only_prefix=args.only_prefix, exclude_models=args.exclude)
+    aggregated = aggregate_by_model(runs)
+    # Use the best run per model (by val acc) for training curves
+    best_results: Dict[str, Dict[str, object]] = {m: stats["best_run"] for m, stats in aggregated.items()}
 
     bar_path = out_dir / "validation_accuracy_bar.png"
+    bar_meanstd_path = out_dir / "validation_accuracy_bar_meanstd.png"
     acc_path = out_dir / "training_accuracy.png"
     loss_path = out_dir / "training_loss.png"
     metrics_path = out_dir / "parsed_metrics.json"
     combined_path = out_dir / "training_curves.png"
 
-    palette = build_model_palette(list(results.keys()))
-    plot_validation_bar(results, bar_path, palette, profile.label, profile.bar_xlim)
-    plot_training_accuracy(results, acc_path, palette, profile.label)
-    plot_training_loss(results, loss_path, palette, profile.label)
-    save_metrics(results, metrics_path)
-    plot_training_curves_combined(results, combined_path, palette, profile.label)
+    palette = build_model_palette(list(best_results.keys()))
+    plot_validation_bar(best_results, bar_path, palette, profile.label, profile.bar_xlim)
+    plot_validation_bar_meanstd(aggregated, bar_meanstd_path, palette, profile.label, profile.bar_xlim)
+    plot_training_accuracy(best_results, acc_path, palette, profile.label)
+    plot_training_loss(best_results, loss_path, palette, profile.label)
+    save_metrics(best_results, aggregated, metrics_path)
+    plot_training_curves_combined(best_results, combined_path, palette, profile.label)
     print(f"[{profile.label}] Wrote validation chart -> {bar_path}")
+    print(f"[{profile.label}] Wrote validation chart (mean±std) -> {bar_meanstd_path}")
     print(f"[{profile.label}] Wrote training accuracy -> {acc_path}")
     print(f"[{profile.label}] Wrote training loss -> {loss_path}")
     print(f"[{profile.label}] Wrote metrics dump -> {metrics_path}")

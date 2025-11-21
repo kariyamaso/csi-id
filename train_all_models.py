@@ -26,7 +26,7 @@ import os
 import pathlib
 import subprocess
 import sys
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 # Full union of models across datasets
 ALL_MODELS: List[str] = [
@@ -111,6 +111,13 @@ def main():
         help="Directory to store checkpoints when --saveckpt is set.",
     )
     parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Run each model for the given seeds (e.g., --seeds 0 1 2).",
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python interpreter to use when invoking run.py.",
@@ -133,29 +140,38 @@ def main():
     if not models:
         print("[error] No models to train after filtering.")
         sys.exit(1)
+    seeds: List[Optional[int]] = args.seeds if args.seeds is not None else [None]
+
     failures: List[str] = []
     for model in models:
-        log_path = pathlib.Path(args.logdir) / args.dataset / f"{timestamp}_{model}.log"
-        cmd = [
-            args.python,
-            "run.py",
-            "--dataset",
-            args.dataset,
-            "--model",
-            model,
-        ]
-        if args.saveckpt:
-            ckptdir = pathlib.Path(args.ckptdir)
-            ckptdir.mkdir(parents=True, exist_ok=True)
-            ckpt_path = ckptdir / f"{args.dataset}_{model}.pt"
-            cmd += ["--save-ckpt", str(ckpt_path)]
-        print(f"[{model}] training started… log -> {log_path}")
-        ret = run_command(cmd, log_path)
-        if ret == 0:
-            print(f"[{model}] finished successfully.")
-        else:
-            failures.append(model)
-            print(f"[{model}] failed with exit code {ret}. See {log_path}")
+        for seed in seeds:
+            seed_suffix = f"s{seed}_" if seed is not None else ""
+            log_path = pathlib.Path(args.logdir) / args.dataset / f"{timestamp}_{seed_suffix}{model}.log"
+            cmd = [
+                args.python,
+                "run.py",
+                "--dataset",
+                args.dataset,
+                "--model",
+                model,
+            ]
+            if seed is not None:
+                cmd += ["--seed", str(seed)]
+            if args.saveckpt:
+                ckptdir = pathlib.Path(args.ckptdir)
+                ckptdir.mkdir(parents=True, exist_ok=True)
+                ckpt_name = f"{args.dataset}_{model}"
+                if seed is not None:
+                    ckpt_name += f"_s{seed}"
+                ckpt_path = ckptdir / f"{ckpt_name}.pt"
+                cmd += ["--save-ckpt", str(ckpt_path)]
+            print(f"[{model}] seed={seed} training started… log -> {log_path}")
+            ret = run_command(cmd, log_path)
+            if ret == 0:
+                print(f"[{model}] seed={seed} finished successfully.")
+            else:
+                failures.append(f"{model} (seed={seed})")
+                print(f"[{model}] seed={seed} failed with exit code {ret}. See {log_path}")
 
     if failures:
         print(f"\nCompleted with failures: {', '.join(failures)}")
