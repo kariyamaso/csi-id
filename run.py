@@ -87,6 +87,8 @@ def test(model, tensor_loader, criterion, device):
 def set_seed(seed: int) -> None:
     """Set RNG seeds for reproducibility."""
     os.environ["PYTHONHASHSEED"] = str(seed)
+    # CuBLAS deterministic requirement for CUDA >= 10.2 when using torch.use_deterministic_algorithms(True).
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
