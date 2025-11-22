@@ -133,22 +133,25 @@ def generate_bar_and_curves(dataset: str, python_bin: str, log_dir: pathlib.Path
     )
 
 
-def generate_confusion(dataset: str, python_bin: str, ckpt_dir: pathlib.Path, out_dir: pathlib.Path) -> None:
-    # Prefer seed 0 if present; otherwise fallback to unseeded filename.
-    ckpt_seed0 = ckpt_dir / f"{dataset}_Mamba_s0.pt"
-    ckpt_path = ckpt_seed0 if ckpt_seed0.exists() else ckpt_dir / f"{dataset}_Mamba.pt"
+def generate_confusion(
+    dataset: str, python_bin: str, ckpt_dir: pathlib.Path, out_dir: pathlib.Path, seeds: Iterable[int] | None
+) -> None:
+    seed_args: List[str] = []
+    if seeds:
+        seed_args = ["--seeds", *[str(s) for s in seeds]]
     run_cmd(
         [
             python_bin,
             "plot_confusion_matrices.py",
             "--dataset",
             dataset,
-            "--model",
+            "--models",
             "Mamba",
-            "--checkpoint",
-            str(ckpt_path),
+            "--checkpoint-dir",
+            str(ckpt_dir),
             "--out-dir",
             str(out_dir),
+            *seed_args,
         ]
     )
 
@@ -263,7 +266,7 @@ def main() -> None:
 
         # 3) Confusion matrices (Mamba only)
         if not args.skip_confusion:
-            generate_confusion(dataset, args.python, ckpt_dir, fig_dir)
+            generate_confusion(dataset, args.python, ckpt_dir, fig_dir, args.seeds)
         else:
             print(f"[{dataset}] skipping confusion matrices per --skip-confusion")
 

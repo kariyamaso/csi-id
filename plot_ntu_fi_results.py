@@ -197,6 +197,23 @@ def build_model_palette(models: List[str]) -> Dict[str, tuple]:
     return palette
 
 
+def summarize_seed_count(aggregated: Dict[str, Dict[str, object]]) -> str:
+    """Return a short seed-count string for figure subtitles."""
+    seen: set[int] = set()
+    total_runs = 0
+    for stats in aggregated.values():
+        for run in stats["runs"]:
+            total_runs += 1
+            seed = run.get("seed")
+            if seed is not None:
+                seen.add(int(seed))
+    if seen:
+        return f"Seeds: n={len(seen)}"
+    if total_runs:
+        return f"Runs: n={total_runs}"
+    return ""
+
+
 @dataclass(frozen=True)
 class DatasetProfile:
     label: str
@@ -227,6 +244,7 @@ def plot_validation_bar(
     palette: Dict[str, tuple],
     dataset_label: str,
     xlim: Tuple[float, float] | None,
+    subtitle: str | None = None,
 ) -> None:
     """Create a horizontal bar chart of validation accuracies."""
     data = sorted(
@@ -241,7 +259,10 @@ def plot_validation_bar(
     fig, ax = plt.subplots(figsize=(14, 6))
     bars = ax.barh(models, accuracies_pct, color=colors, alpha=0.9)
     ax.set_xlabel("Validation Accuracy (%)")
-    ax.set_title(f"{dataset_label} Validation Accuracy")
+    title = f"{dataset_label} Validation Accuracy"
+    if subtitle:
+        title = f"{title}\n{subtitle}"
+    ax.set_title(title)
     if xlim:
         ax.set_xlim(*xlim)
     else:
@@ -275,6 +296,7 @@ def plot_validation_bar_meanstd(
     palette: Dict[str, tuple],
     dataset_label: str,
     xlim: Tuple[float, float] | None,
+    subtitle: str | None = None,
 ) -> None:
     """Create a horizontal bar chart of mean/std validation accuracies."""
     data = sorted(
@@ -292,7 +314,10 @@ def plot_validation_bar_meanstd(
     fig, ax = plt.subplots(figsize=(14, 6))
     bars = ax.barh(models, means_pct, xerr=stds_pct, color=colors, alpha=0.9, capsize=6)
     ax.set_xlabel("Validation Accuracy (%)")
-    ax.set_title(f"{dataset_label} Validation Accuracy (mean \u00b1 std)")
+    title = f"{dataset_label} Validation Accuracy (mean \u00b1 std)"
+    if subtitle:
+        title = f"{title}\n{subtitle}"
+    ax.set_title(title)
     if xlim:
         ax.set_xlim(*xlim)
     else:
@@ -497,8 +522,11 @@ def main():
     combined_path = out_dir / "training_curves.png"
 
     palette = build_model_palette(list(best_results.keys()))
-    plot_validation_bar(best_results, bar_path, palette, profile.label, profile.bar_xlim)
-    plot_validation_bar_meanstd(aggregated, bar_meanstd_path, palette, profile.label, profile.bar_xlim)
+    subtitle = summarize_seed_count(aggregated)
+    plot_validation_bar(best_results, bar_path, palette, profile.label, profile.bar_xlim, subtitle=subtitle or None)
+    plot_validation_bar_meanstd(
+        aggregated, bar_meanstd_path, palette, profile.label, profile.bar_xlim, subtitle=subtitle or None
+    )
     plot_training_accuracy(best_results, acc_path, palette, profile.label)
     plot_training_loss(best_results, loss_path, palette, profile.label)
     save_metrics(best_results, aggregated, metrics_path)
