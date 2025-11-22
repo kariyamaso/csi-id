@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""Generate confusion matrices for NTU-Fi datasets using saved checkpoints."""
+"""Generate confusion matrices for NTU-Fi datasets using saved checkpoints.
+
+Now supports multiple models and multiple seeds. If a checkpoint directory
+contains files named `<dataset>_<model>_s<seed>.pt`, the script will generate
+one confusion matrix per seed. If no seed-specific checkpoint is found, it
+falls back to `<dataset>_<model>.pt`.
+"""
 
 from __future__ import annotations
 
 import argparse
 import os
 import pathlib
-from typing import Dict, Iterable, List, Tuple
+import re
+from typing import Dict, Iterable, List, Tuple, Optional
 
 # Route matplotlib/font caches into a writable local directory.
 cache_root = pathlib.Path(".cache")
@@ -27,15 +34,30 @@ import torch
 from util import load_data_n_model
 
 
-DEFAULT_CKPTS: Dict[str, pathlib.Path] = {
-    "NTU-Fi-HumanID": pathlib.Path("model_pt/NTU-Fi-HumanID_Mamba.pt"),
-    "NTU-Fi_HAR": pathlib.Path("model_pt_HAR/NTU-Fi_HAR_Mamba.pt"),
+DEFAULT_CKPT_DIRS: Dict[str, pathlib.Path] = {
+    "NTU-Fi-HumanID": pathlib.Path("model_pt"),
+    "NTU-Fi_HAR": pathlib.Path("model_pt_HAR"),
 }
 
 DEFAULT_OUT_DIRS: Dict[str, pathlib.Path] = {
     "NTU-Fi-HumanID": pathlib.Path("figures/ntu_fi_results"),
     "NTU-Fi_HAR": pathlib.Path("figures/ntu_fi_har_results"),
 }
+
+MODEL_CHOICES: List[str] = [
+    "MLP",
+    "LeNet",
+    "ResNet18",
+    "ResNet50",
+    "ResNet101",
+    "RNN",
+    "GRU",
+    "LSTM",
+    "BiLSTM",
+    "CNN+GRU",
+    "ViT",
+    "Mamba",
+]
 
 
 def invert_category_map(dataset) -> List[str]:
@@ -101,17 +123,51 @@ def save_confusion_matrix(cm: np.ndarray, class_names: List[str], title: str, ou
     plt.close(fig)
 
 
+def discover_checkpoints(
+    dataset: str,
+    model: str,
+    ckpt_dir: pathlib.Path,
+    seeds: Optional[List[int]],
+) -> List[Tuple[str, pathlib.Path]]:
+    """Return list of (seed_label, checkpoint_path) for the given model/dataset."""
+    ckpt_dir = ckpt_dir.expanduser()
+    if seeds:
+        paths: List[Tuple[str, pathlib.Path]] = []
+        for s in seeds:
+            path = ckpt_dir / f"{dataset}_{model}_s{s}.pt"
+            if path.is_file():
+                paths.append((f"s{s}", path))
+        if paths:
+            return paths
+    # Auto-discover seeds if none provided or none found
+    pattern = f"{dataset}_{model}_s*.pt"
+    discovered: List[Tuple[str, pathlib.Path]] = []
+    for path in sorted(ckpt_dir.glob(pattern)):
+        match = re.search(r"_s(\d+)\.pt$", path.name)
+        seed_label = f"s{match.group(1)}" if match else "auto"
+        discovered.append((seed_label, path))
+    if discovered:
+        return discovered
+    # Fallback to unseeded
+    fallback = ckpt_dir / f"{dataset}_{model}.pt"
+    if fallback.is_file():
+        return [("best", fallback)]
+    return []
+
+
 def run_single(
     dataset_name: str,
     model_name: str,
     checkpoint: pathlib.Path,
     batch_size: int | None = None,
     out_dir: pathlib.Path | None = None,
+    seed_label: str | None = None,
 ) -> pathlib.Path:
     if not checkpoint.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint}")
 
-    print(f"[info] Dataset={dataset_name}, model={model_name}, ckpt={checkpoint}")
+    label = f"{model_name}" + (f" ({seed_label})" if seed_label else "")
+    print(f"[info] Dataset={dataset_name}, model={label}, ckpt={checkpoint}")
     train_loader, test_loader, model, _ = load_data_n_model(dataset_name, model_name, "./Data/")
     if batch_size:
         test_loader = torch.utils.data.DataLoader(test_loader.dataset, batch_size=batch_size, shuffle=False)
@@ -127,8 +183,9 @@ def run_single(
     cm = build_confusion_matrix(y_true, y_pred, num_classes=len(class_names))
 
     out_dir = out_dir or DEFAULT_OUT_DIRS.get(dataset_name, pathlib.Path("figures"))
-    out_path = out_dir / f"confusion_matrix_{model_name}.pdf"
-    save_confusion_matrix(cm, class_names, f"{dataset_name} ({model_name})", out_path)
+    suffix = f"_{seed_label}" if seed_label else ""
+    out_path = out_dir / f"confusion_matrix_{model_name}{suffix}.pdf"
+    save_confusion_matrix(cm, class_names, f"{dataset_name} ({label})", out_path)
 
     print(f"[info] Accuracy: {acc*100:.2f}% — saved {out_path}")
     return out_path
@@ -143,16 +200,30 @@ def parse_args() -> argparse.Namespace:
         help="Dataset to evaluate.",
     )
     parser.add_argument(
-        "--model",
-        choices=["Mamba"],
-        default="Mamba",
-        help="Model to evaluate (default: Mamba with saved checkpoint).",
+        "--models",
+        nargs="+",
+        choices=MODEL_CHOICES,
+        default=["Mamba"],
+        help="Models to evaluate (default: Mamba).",
     )
     parser.add_argument(
         "--checkpoint",
         type=pathlib.Path,
         default=None,
         help="Path to model checkpoint. Defaults to pre-trained Mamba weights for each dataset.",
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=pathlib.Path,
+        default=None,
+        help="Directory containing checkpoints named <dataset>_<model>_s<seed>.pt.",
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Specific seeds to evaluate. If omitted, will auto-discover from checkpoint-dir.",
     )
     parser.add_argument(
         "--batch-size",
@@ -173,13 +244,27 @@ def main() -> None:
     args = parse_args()
     datasets = ["NTU-Fi-HumanID", "NTU-Fi_HAR"] if args.all else [args.dataset]
     for ds in datasets:
-        ckpt = args.checkpoint
-        if ckpt is None:
-            ckpt = DEFAULT_CKPTS.get(ds)
-            if ckpt is None:
-                raise ValueError(f"No default checkpoint configured for {ds}; please provide --checkpoint.")
         out_dir = args.out_dir or DEFAULT_OUT_DIRS.get(ds)
-        run_single(ds, args.model, ckpt, batch_size=args.batch_size, out_dir=out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ckpt_dir = args.checkpoint_dir or DEFAULT_CKPT_DIRS.get(ds, pathlib.Path("checkpoints"))
+        for model in args.models:
+            # If an explicit checkpoint is given, evaluate only that once.
+            if args.checkpoint:
+                run_single(ds, model, args.checkpoint, batch_size=args.batch_size, out_dir=out_dir, seed_label=None)
+                continue
+            ckpts = discover_checkpoints(ds, model, ckpt_dir, seeds=args.seeds)
+            if not ckpts:
+                print(f"[warn] No checkpoints found for {ds} {model} in {ckpt_dir}")
+                continue
+            for seed_label, path in ckpts:
+                run_single(
+                    ds,
+                    model,
+                    path,
+                    batch_size=args.batch_size,
+                    out_dir=out_dir,
+                    seed_label=seed_label,
+                )
 
 
 if __name__ == "__main__":
