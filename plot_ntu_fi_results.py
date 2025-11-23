@@ -40,6 +40,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Use Type 42 fonts in PDF/PS for publication-quality vector output
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
 
 def parse_log(path: pathlib.Path) -> Dict[str, object]:
     """Return training curves + validation metrics for a single log file."""

@@ -31,6 +31,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+# Use Type 42 fonts in PDF/PS for publication-quality vector output
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
+
 from util import load_data_n_model
 
 
