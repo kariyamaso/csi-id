@@ -513,6 +513,10 @@ def main():
     aggregated = aggregate_by_model(runs)
     # Use the best run per model (by val acc) for training curves
     best_results: Dict[str, Dict[str, object]] = {m: stats["best_run"] for m, stats in aggregated.items()}
+    # Use mean accuracy (instead of argmax) for the primary bar chart
+    mean_results: Dict[str, Dict[str, float]] = {
+        m: {"val_acc": stats["mean_val_acc"]} for m, stats in aggregated.items()
+    }
 
     bar_path = out_dir / "validation_accuracy_bar.png"
     bar_meanstd_path = out_dir / "validation_accuracy_bar_meanstd.png"
@@ -523,7 +527,7 @@ def main():
 
     palette = build_model_palette(list(best_results.keys()))
     subtitle = summarize_seed_count(aggregated)
-    plot_validation_bar(best_results, bar_path, palette, profile.label, profile.bar_xlim, subtitle=subtitle or None)
+    plot_validation_bar(mean_results, bar_path, palette, profile.label, profile.bar_xlim, subtitle=subtitle or None)
     plot_validation_bar_meanstd(
         aggregated, bar_meanstd_path, palette, profile.label, profile.bar_xlim, subtitle=subtitle or None
     )
