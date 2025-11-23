@@ -63,6 +63,10 @@ import matplotlib.pyplot as plt
 import scipy.io as sio  # for APPLIED normalization
 from matplotlib.lines import Line2D
 
+# Use Type 42 fonts in PDF/PS for better compatibility in publications
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
+
 try:
     from umap import UMAP
 except Exception as e:  # pragma: no cover - optional dependency
