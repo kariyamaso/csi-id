@@ -305,10 +305,13 @@ def plot_validation_bar_meanstd(
             for model, stats in aggregated.items()
         ],
         key=lambda item: item[1],
+        reverse=True,  # sort by accuracy descending (top to bottom)
     )
     models, means, stds = zip(*data)
     means_pct = [m * 100 for m in means]
-    stds_pct = [s * 100 for s in stds]
+    stds_pct_raw = [s * 100 for s in stds]
+    # Clip error bars so mean+std does not exceed 100%
+    stds_pct = [min(std, max(0.0, 100.0 - mean)) for mean, std in zip(means_pct, stds_pct_raw)]
     colors = [palette.get(model, "#377eb8") for model in models]
 
     fig, ax = plt.subplots(figsize=(14, 6))
@@ -321,9 +324,7 @@ def plot_validation_bar_meanstd(
     if xlim:
         ax.set_xlim(*xlim)
     else:
-        upper = max(m + s for m, s in zip(means_pct, stds_pct)) if means_pct else 100
-        right = max(upper + 5, 115)
-        ax.set_xlim(0, right)
+        ax.set_xlim(0, 100)
     ax.grid(axis="x", linestyle="--", alpha=0.4)
     ax.invert_yaxis()
 
