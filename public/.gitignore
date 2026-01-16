@@ -1,0 +1,3 @@
+# Keep dataset directory out of git
+/public/Data/
+__pycache__
