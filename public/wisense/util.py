@@ -44,6 +44,7 @@ from .models.widar_model import (
     Widar_ResNet50,
     Widar_ViT,
 )
+from .models.mamba_generic import GenericMambaClassifier
 
 
 def _subset_dataset(dataset, fraction: float, seed: int | None):
@@ -142,6 +143,16 @@ def load_data_n_model(
         elif model_name == "ViT":
             model = UT_HAR_ViT()
             train_epoch = 200
+        elif model_name == "Mamba":
+            mamba_cfg = dict(model_params.get("mamba", {}))
+            model = GenericMambaClassifier(
+                num_classes=classes["UT_HAR_data"],
+                in_features=90,
+                pooling=pooling,
+                selective=(mamba_selective != "off"),
+                **mamba_cfg,
+            )
+            train_epoch = 200
         else:
             raise ValueError(f"Unsupported model for UT_HAR_data: {model_name}")
         return train_loader, test_loader, model, train_epoch
@@ -194,6 +205,16 @@ def load_data_n_model(
             train_epoch = 200
         elif model_name == "ViT":
             model = Widar_ViT(num_classes=classes["Widar"])
+            train_epoch = 100
+        elif model_name == "Mamba":
+            mamba_cfg = dict(model_params.get("mamba", {}))
+            model = GenericMambaClassifier(
+                num_classes=classes["Widar"],
+                in_features=22 * 20,
+                pooling=pooling,
+                selective=(mamba_selective != "off"),
+                **mamba_cfg,
+            )
             train_epoch = 100
         else:
             raise ValueError(f"Unsupported model for Widar: {model_name}")

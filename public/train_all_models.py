@@ -14,10 +14,10 @@ from typing import List, Optional
 
 
 DEFAULT_MODELS = {
-    "UT_HAR_data": ["MLP", "LeNet", "ResNet18", "ResNet50", "ResNet101", "RNN", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ViT"],
+    "UT_HAR_data": ["MLP", "LeNet", "ResNet18", "ResNet50", "ResNet101", "RNN", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ViT", "Mamba"],
     "NTU-Fi-HumanID": ["MLP", "LeNet", "ResNet18", "ResNet50", "ResNet101", "RNN", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ViT", "Mamba"],
     "NTU-Fi_HAR": ["MLP", "LeNet", "ResNet18", "ResNet50", "ResNet101", "RNN", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ViT", "Mamba"],
-    "Widar": ["MLP", "LeNet", "ResNet18", "ResNet50", "ResNet101", "RNN", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ViT"],
+    "Widar": ["MLP", "LeNet", "ResNet18", "ResNet50", "ResNet101", "RNN", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ViT", "Mamba"],
     "APPLIED": ["MLP", "LeNet", "ResNet18", "ResNet50", "ResNet101", "RNN", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ViT", "Mamba"],
 }
 
@@ -53,4 +53,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
