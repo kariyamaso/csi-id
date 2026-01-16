@@ -223,6 +223,11 @@ def main():
     if args.seed is not None:
         set_seed(args.seed)
 
+    variant = build_variant(cfg)
+    seed_dir = str(args.seed) if args.seed is not None else "noseed"
+    run_dir = Path(cfg["runs_root"]) / cfg["dataset"]["name"] / cfg["model"]["name"] / variant / seed_dir
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     # Optional APPLIED normalization auto-compute (matches root script behavior).
     data_root = cfg["data_root"]
     if cfg["dataset"]["name"] == "APPLIED" and not (os.getenv("NTU_FI_NORM_MEAN") and os.getenv("NTU_FI_NORM_STD")):
@@ -301,6 +306,15 @@ def main():
     elif args.log_dir:
         timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         log_path = Path(args.log_dir) / cfg["dataset"]["name"] / f"{timestamp}_{cfg['model']['name']}.log"
+    else:
+        logging_cfg = cfg.get("logging", {}) or {}
+        if logging_cfg.get("enabled"):
+            destination = logging_cfg.get("destination", "run_dir")
+            filename = logging_cfg.get("filename", "stdout.log")
+            if destination == "run_dir":
+                log_path = run_dir / filename
+            else:
+                raise ValueError("logging.destination must be 'run_dir' (or use --log-dir/--log-file)")
 
     def _run():
         metrics = {}
@@ -425,10 +439,6 @@ def main():
             torch.save(model.state_dict(), ckpt_path)
             print(f"Saved checkpoint to {ckpt_path}")
 
-        variant = build_variant(cfg)
-        seed_dir = str(args.seed) if args.seed is not None else "noseed"
-        run_dir = Path(cfg["runs_root"]) / cfg["dataset"]["name"] / cfg["model"]["name"] / variant / seed_dir
-        run_dir.mkdir(parents=True, exist_ok=True)
         metrics.update(
             {
                 "dataset": cfg["dataset"]["name"],
@@ -461,6 +471,7 @@ def main():
         )
         metrics.update(efficiency)
         metrics["config"] = cfg
+        metrics["log_path"] = str(log_path) if log_path else None
         metrics_path = run_dir / "metrics.json"
         metrics_path.write_text(json.dumps(metrics, indent=2))
         print(f"Metrics written to {metrics_path}")

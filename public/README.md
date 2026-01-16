@@ -21,6 +21,9 @@ python public/scripts/aggregate_results.py --runs-dir runs --out-dir artifacts/a
 
 You can override config keys via CLI flags (see `python public/train.py -h`).
 
+Logs:
+- Per-run stdout/stderr is saved automatically when `config.logging.enabled=true` (default in the example configs): `runs/.../<seed>/stdout.log`.
+
 ## Run all models × seeds (example)
 
 ```bash

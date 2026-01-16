@@ -25,6 +25,11 @@ def default_config() -> Dict[str, Any]:
     return {
         "data_root": "public/Data/",
         "runs_root": "runs",
+        "logging": {
+            "enabled": False,
+            "destination": "run_dir",
+            "filename": "stdout.log",
+        },
         "dataset": {"name": "NTU-Fi-HumanID"},
         "model": {"name": "Mamba"},
         "dataloader": {"batch_train": 64, "batch_test": 64, "num_workers": 0},
