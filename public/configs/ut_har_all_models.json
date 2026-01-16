@@ -1,0 +1,42 @@
+{
+  "data_root": "public/Data/",
+  "logging": {
+    "enabled": true,
+    "destination": "run_dir",
+    "filename": "stdout.log"
+  },
+  "dataset": { "name": "UT_HAR_data" },
+  "dataloader": { "batch_train": 64, "batch_test": 256, "num_workers": 0 },
+  "training": {
+    "epochs": null,
+    "lr": 0.001,
+    "eval_only": false,
+    "epochs_by_model": {
+      "GRU": 200,
+      "LSTM": 200,
+      "RNN": 400,
+      "CNN+GRU": 400,
+      "ViT": 200,
+      "Mamba": 200
+    },
+    "early_stop": {
+      "enabled": true,
+      "patience": 6,
+      "metric": "loss",
+      "min_delta": 0.0001,
+      "restore_best": true
+    }
+  },
+  "efficiency": { "enabled": true, "warmup": 30, "iters": 200 },
+  "ablations": { "pooling": "mean", "mamba_selective": "on" },
+  "model_params": {
+    "mamba": {
+      "d_model": 256,
+      "depth": 4,
+      "d_state": 64,
+      "d_conv": 4,
+      "expand": 2,
+      "dropout": 0.1
+    }
+  }
+}
