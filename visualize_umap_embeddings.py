@@ -87,7 +87,6 @@ from NTU_Fi_model import (
     NTU_Fi_LSTM,
     NTU_Fi_Mamba,
     NTU_Fi_RNN,
-    NTU_Fi_SSM,
     NTU_Fi_ViT,
 )
 
@@ -193,18 +192,6 @@ def extract_features(
         x = x.permute(1, 0, 2)  # T x batch x 8
         _, ht = model.gru(x)
         return ht[-1]
-
-    if isinstance(model, NTU_Fi_SSM):
-        if hasattr(model, "forward_features"):
-            return model.forward_features(inputs)
-        b = inputs.size(0)
-        seq_len = inputs.size(-1)
-        seq = inputs.view(b, 3 * 114, seq_len).permute(0, 2, 1)
-        seq = model.input_proj(seq)
-        for block in model.blocks:
-            seq = block(seq)
-        feats = model.norm(seq).mean(dim=1)
-        return feats
 
     raise TypeError(
         f"Unsupported model type for feature extraction: {type(model).__name__}"

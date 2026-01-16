@@ -36,8 +36,6 @@ def load_data_n_model(
 ):
     val_noise_p = noise_p if val_noise_p is None else val_noise_p
     classes = {'UT_HAR_data':7,'NTU-Fi-HumanID':14,'NTU-Fi_HAR':6,'Widar':22,'APPLIED':3}
-    if model_name == 'SSM' and dataset_name != 'NTU-Fi-HumanID':
-        raise ValueError("SSM model is only implemented for NTU-Fi-HumanID.")
     if dataset_name == 'UT_HAR_data':
         print('using dataset: UT-HAR DATA')
         data = UT_HAR_dataset(root)
@@ -161,10 +159,6 @@ def load_data_n_model(
             print("using model: ViT")
             model = NTU_Fi_ViT(num_classes=num_classes)
             train_epoch = 50
-        elif model_name == 'SSM':
-            print("using model: SSM")
-            model = NTU_Fi_SSM(num_classes, pooling=pooling)
-            train_epoch = 75
         elif model_name == 'Mamba':
             print("using model: Mamba")
             model = NTU_Fi_Mamba(

@@ -498,7 +498,7 @@ def main():
         "--exclude",
         action="append",
         default=None,
-        help="Model names to exclude (e.g., --exclude SSM). Can be repeated.",
+        help="Model names to exclude (e.g., --exclude Mamba). Can be repeated.",
     )
     parser.add_argument(
         "--out-dir",

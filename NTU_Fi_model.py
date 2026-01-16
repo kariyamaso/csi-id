@@ -279,9 +279,9 @@ class NTU_Fi_CNN_GRU(nn.Module):
         return outputs
     
 
-class DiagonalSSMLayer(nn.Module):
+class DiagonalStateSpaceLayer(nn.Module):
     def __init__(self, d_model, d_state, dropout=0.1, use_skip: bool = True):
-        super(DiagonalSSMLayer, self).__init__()
+        super(DiagonalStateSpaceLayer, self).__init__()
         self.d_state = d_state
         self.B = nn.Linear(d_model, d_state, bias=False)
         self.C = nn.Linear(d_state, d_model, bias=False)
@@ -305,80 +305,6 @@ class DiagonalSSMLayer(nn.Module):
         if self.use_skip:
             y = y + self.skip(x)
         return self.dropout(y)
-
-
-class StateSpaceBlock(nn.Module):
-    def __init__(self, d_model, d_state, dropout=0.1):
-        super(StateSpaceBlock, self).__init__()
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.ssm = DiagonalSSMLayer(d_model, d_state, dropout)
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, 2 * d_model),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(2 * d_model, d_model),
-            nn.Dropout(dropout),
-        )
-
-    def forward(self, x):
-        x = x + self.ssm(self.norm1(x))
-        x = x + self.ffn(self.norm2(x))
-        return x
-
-
-class NTU_Fi_SSM(nn.Module):
-    def __init__(
-        self,
-        num_classes,
-        d_model=128,
-        d_state=64,
-        depth=3,
-        dropout=0.1,
-        pooling: str = "mean",
-    ):
-        super(NTU_Fi_SSM, self).__init__()
-        self.input_proj = nn.Sequential(
-            nn.Linear(342, d_model),
-            nn.LayerNorm(d_model),
-        )
-        self.blocks = nn.ModuleList(
-            [StateSpaceBlock(d_model, d_state, dropout) for _ in range(depth)]
-        )
-        self.norm = nn.LayerNorm(d_model)
-        self.pooling = pooling
-        self.pool_attn = nn.Linear(d_model, 1) if pooling == "attn" else None
-        self.head = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model, num_classes),
-        )
-
-    def _pool(self, seq):
-        if self.pooling == "mean":
-            return seq.mean(dim=1)
-        if self.pooling == "last":
-            return seq[:, -1, :]
-        if self.pooling == "attn":
-            weights = torch.softmax(self.pool_attn(seq), dim=1)
-            return (seq * weights).sum(dim=1)
-        raise ValueError(f"Unsupported pooling: {self.pooling}")
-
-    def forward_features(self, x):
-        batch_size = x.size(0)
-        seq_len = x.size(-1)
-        seq = x.view(batch_size, 3 * 114, seq_len)
-        seq = seq.permute(0, 2, 1)
-        seq = self.input_proj(seq)
-        for block in self.blocks:
-            seq = block(seq)
-        seq = self.norm(seq)
-        return self._pool(seq)
-
-    def forward(self, x):
-        feats = self.forward_features(x)
-        return self.head(feats)
 
 
 class MambaEncoderBlock(nn.Module):
@@ -408,7 +334,7 @@ class NonSelectiveMambaBlock(nn.Module):
     def __init__(self, d_model, d_state, dropout=0.1):
         super().__init__()
         self.norm = nn.LayerNorm(d_model)
-        self.ssm = DiagonalSSMLayer(d_model, d_state, dropout, use_skip=False)
+        self.ssm = DiagonalStateSpaceLayer(d_model, d_state, dropout, use_skip=False)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):

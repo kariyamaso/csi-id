@@ -114,7 +114,7 @@ def set_seed(seed: int) -> None:
 def parse_args():
     parser = argparse.ArgumentParser('WiFi Imaging Benchmark')
     parser.add_argument('--dataset', choices = ['UT_HAR_data','NTU-Fi-HumanID','NTU-Fi_HAR','Widar','APPLIED'])
-    parser.add_argument('--model', choices = ['MLP','LeNet','ResNet18','ResNet50','ResNet101','RNN','GRU','LSTM','BiLSTM', 'CNN+GRU','ViT','SSM','Mamba'])
+    parser.add_argument('--model', choices = ['MLP','LeNet','ResNet18','ResNet50','ResNet101','RNN','GRU','LSTM','BiLSTM', 'CNN+GRU','ViT','Mamba'])
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to a pretrained state_dict to load before training.')
     parser.add_argument('--eval-only', action='store_true', help='Skip training and only run evaluation.')
     parser.add_argument('--log-dir', type=str, default=None, help='Directory to store logs (mirrors train_all format).')
@@ -122,7 +122,7 @@ def parse_args():
     parser.add_argument('--save-ckpt', type=str, default=None, help='File path to save model.state_dict() after training. Ignored with --eval-only.')
     parser.add_argument('--seed', type=int, default=None, help='Seed for reproducibility (applies to python/numpy/torch).')
     parser.add_argument('--mamba_selective', choices=['on', 'off'], default='on', help='Enable/disable Mamba selectivity.')
-    parser.add_argument('--pooling', choices=['mean', 'last', 'attn'], default='mean', help='Temporal pooling for sequence models.')
+    parser.add_argument('--pooling', choices=['mean', 'last', 'attn'], default='mean', help='Temporal pooling for Mamba.')
     parser.add_argument('--seq_len', type=int, default=500, help='Sequence length after downsampling (CSI datasets only).')
     parser.add_argument('--shuffle_subcarriers', type=int, choices=[0, 1], default=0, help='Shuffle subcarriers in CSI inputs.')
     parser.add_argument('--shuffle_antennas', type=int, choices=[0, 1], default=0, help='Shuffle antennas in CSI inputs.')
@@ -143,8 +143,6 @@ def build_variant(args) -> str:
     parts = []
     if args.model == "Mamba":
         parts.append(f"selective_{args.mamba_selective}")
-        parts.append(f"pool_{args.pooling}")
-    elif args.model == "SSM" and args.pooling != "mean":
         parts.append(f"pool_{args.pooling}")
     parts.append(f"seq{args.seq_len}")
     if args.shuffle_subcarriers:
@@ -180,15 +178,15 @@ def run_experiment(args):
     if args.model != 'Mamba' and args.mamba_selective != 'on':
         print("[warn] --mamba_selective only applies to Mamba; resetting to 'on'.")
         args.mamba_selective = 'on'
-    if args.model not in ('Mamba', 'SSM') and args.pooling != 'mean':
-        print("[warn] --pooling only applies to Mamba/SSM; resetting to 'mean'.")
+    if args.model != 'Mamba' and args.pooling != 'mean':
+        print("[warn] --pooling only applies to Mamba; resetting to 'mean'.")
         args.pooling = 'mean'
 
     if args.dataset in ('UT_HAR_data', 'Widar') and args.seq_len != 500:
         print("[warn] --seq_len applies to CSI datasets only; resetting to 500.")
         args.seq_len = 500
     if args.seq_len != 500:
-        seq_ok = {'RNN', 'GRU', 'LSTM', 'BiLSTM', 'CNN+GRU', 'SSM', 'Mamba'}
+        seq_ok = {'RNN', 'GRU', 'LSTM', 'BiLSTM', 'CNN+GRU', 'Mamba'}
         if args.model not in seq_ok:
             raise ValueError(
                 f"--seq_len only supported for {sorted(seq_ok)}; got model={args.model}"

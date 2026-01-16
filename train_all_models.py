@@ -41,7 +41,6 @@ ALL_MODELS: List[str] = [
     "BiLSTM",
     "CNN+GRU",
     "ViT",
-    "SSM",
     "Mamba",
 ]
 
@@ -62,13 +61,13 @@ def supported_models_for(dataset: str) -> List[str]:
         "ViT",
     ]
     if dataset == "NTU-Fi-HumanID":
-        return base + ["SSM", "Mamba"]
+        return base + ["Mamba"]
     if dataset == "NTU-Fi_HAR":
-        return base + ["Mamba"]  # SSM not supported
+        return base + ["Mamba"]
     if dataset == "APPLIED":
-        return base + ["Mamba"]  # SSM not supported
+        return base + ["Mamba"]
     if dataset in ("UT_HAR_data", "Widar"):
-        return base  # No SSM/Mamba
+        return base
     return base
 
 

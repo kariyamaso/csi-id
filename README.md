@@ -65,7 +65,6 @@ You can choose [model name] from the model list below
 - BiLSTM
 - CNN+GRU
 - ViT
-- SSM
 - Mamba
 
 You can choose [dataset name] from the dataset list below
@@ -123,9 +122,6 @@ Method: [*AutoFi: Towards Automatic WiFi Human Sensing via Geometric Self-Superv
 - **self.encoder** : It consists of 3 convolutional layers followed by activation functions
 - **self.gru** : A one-layer GRU structure with a hidden dimension of 64
 - **self.classifier** : It consistis a dropout layer followed by a fully-connected layer and an activation function
-### SSM
-- **self.input_proj / self.blocks** : Projects the CSI sequence into a latent width and processes it with diagonal state space blocks for long-range modeling
-- **self.head** : Pools the temporal dimension before a lightweight classifier
 ### Mamba
 - **self.input_proj / self.blocks** : Uses stacked selective state space (Mamba) blocks with residual connections to capture long-term CSI dependencies
 - **self.head** : Applies mean pooling followed by GELU-activated projections for classification
