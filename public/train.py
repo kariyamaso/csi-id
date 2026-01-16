@@ -9,6 +9,7 @@ import random
 import sys
 import time
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -124,7 +125,7 @@ def train(model, tensor_loader, num_epochs, learning_rate, criterion, device):
     return {"train_time_total_sec": total_time, "train_time_sec_epoch": mean_epoch}
 
 
-def test(model, tensor_loader, criterion, device):
+def test(model, tensor_loader, criterion, device, *, verbose: bool = True):
     model.eval()
     test_acc = 0
     test_loss = 0
@@ -140,7 +141,8 @@ def test(model, tensor_loader, criterion, device):
             test_loss += loss.item() * inputs.size(0)
     test_acc = test_acc / len(tensor_loader)
     test_loss = test_loss / len(tensor_loader.dataset)
-    print(f"validation accuracy:{float(test_acc):.4f}, loss:{float(test_loss):.5f}")
+    if verbose:
+        print(f"validation accuracy:{float(test_acc):.4f}, loss:{float(test_loss):.5f}")
     return {"acc": float(test_acc), "loss": float(test_loss)}
 
 
@@ -276,7 +278,12 @@ def main():
         model_params=cfg.get("model_params", {}),
     )
 
-    epochs = cfg["training"]["epochs"] if cfg["training"]["epochs"] is not None else train_epoch_default
+    epochs_by_model = cfg.get("training", {}).get("epochs_by_model", {}) or {}
+    epochs_override = epochs_by_model.get(cfg["model"]["name"])
+    if epochs_override is not None:
+        epochs = int(epochs_override)
+    else:
+        epochs = cfg["training"]["epochs"] if cfg["training"]["epochs"] is not None else train_epoch_default
     lr = float(cfg["training"]["lr"])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -321,9 +328,96 @@ def main():
                 print(f"[warn] Efficiency measurement failed: {exc}")
 
         train_stats = {"train_time_total_sec": None, "train_time_sec_epoch": None}
-        if not cfg["training"]["eval_only"]:
-            train_stats = train(model, train_loader, epochs, lr, criterion, device)
-        test_stats = test(model, test_loader, criterion, device)
+        test_stats = {"acc": None, "loss": None}
+
+        early = cfg.get("training", {}).get("early_stop", {}) or {}
+        early_enabled = bool(early.get("enabled", False))
+        patience = int(early.get("patience", 5))
+        metric_name = str(early.get("metric", "loss"))
+        min_delta = float(early.get("min_delta", 0.0))
+        restore_best = bool(early.get("restore_best", True))
+
+        best_epoch = None
+        best_value = None
+        best_state = None
+        bad_epochs = 0
+        epochs_ran = 0
+
+        if cfg["training"]["eval_only"]:
+            test_stats = test(model, test_loader, criterion, device, verbose=True)
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            epoch_times = []
+            for epoch in range(int(epochs)):
+                model.train()
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+                epoch_start = time.perf_counter()
+
+                epoch_loss = 0.0
+                epoch_accuracy = 0.0
+                for inputs, labels in train_loader:
+                    inputs = inputs.to(device)
+                    labels = labels.to(device, dtype=torch.long)
+                    optimizer.zero_grad()
+                    outputs = model(inputs).float()
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    optimizer.step()
+                    epoch_loss += loss.item() * inputs.size(0)
+                    predict_y = torch.argmax(outputs, dim=1).to(device)
+                    epoch_accuracy += (predict_y == labels.to(device)).sum().item() / labels.size(0)
+
+                epoch_loss = epoch_loss / len(train_loader.dataset)
+                epoch_accuracy = epoch_accuracy / len(train_loader)
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+                epoch_times.append(time.perf_counter() - epoch_start)
+                epochs_ran = epoch + 1
+                print(f"Epoch:{epoch+1}, Accuracy:{float(epoch_accuracy):.4f},Loss:{float(epoch_loss):.9f}")
+
+                # validation (same split used for final eval)
+                val_stats = test(model, test_loader, criterion, device, verbose=True)
+
+                if early_enabled:
+                    current = val_stats.get(metric_name)
+                    if current is None:
+                        raise ValueError(f"early_stop.metric={metric_name} not present in metrics")
+
+                    improved = False
+                    if best_value is None:
+                        improved = True
+                    else:
+                        if metric_name == "loss":
+                            improved = (best_value - current) > min_delta
+                        elif metric_name == "acc":
+                            improved = (current - best_value) > min_delta
+                        else:
+                            raise ValueError("early_stop.metric must be 'loss' or 'acc'")
+
+                    if improved:
+                        best_value = current
+                        best_epoch = epoch + 1
+                        bad_epochs = 0
+                        if restore_best:
+                            best_state = copy.deepcopy(model.state_dict())
+                    else:
+                        bad_epochs += 1
+                        if bad_epochs >= patience:
+                            print(f"[info] Early stopping triggered at epoch {epoch+1} (best={best_epoch}, {metric_name}={best_value})")
+                            break
+
+            total_time = float(sum(epoch_times))
+            train_stats = {
+                "train_time_total_sec": total_time,
+                "train_time_sec_epoch": (total_time / len(epoch_times)) if epoch_times else None,
+                "epochs_ran": epochs_ran,
+            }
+
+            if restore_best and best_state is not None:
+                model.load_state_dict(best_state)
+
+            test_stats = test(model, test_loader, criterion, device, verbose=True)
 
         if args.save_ckpt:
             ckpt_path = Path(args.save_ckpt)
@@ -354,7 +448,13 @@ def main():
                 "val_noise": a["val_noise"],
                 "val_noise_p": a["val_noise_p"],
                 "epochs": epochs,
+                "epochs_ran": train_stats.get("epochs_ran", epochs if not cfg["training"]["eval_only"] else 0),
                 "lr": lr,
+                "early_stop_enabled": early_enabled,
+                "early_stop_patience": patience,
+                "early_stop_metric": metric_name,
+                "early_stop_best_epoch": best_epoch,
+                "early_stop_best_value": best_value,
                 "train_time_total_sec": train_stats.get("train_time_total_sec"),
                 "train_time_sec_epoch": train_stats.get("train_time_sec_epoch"),
             }
@@ -383,4 +483,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

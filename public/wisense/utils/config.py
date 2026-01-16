@@ -28,7 +28,19 @@ def default_config() -> Dict[str, Any]:
         "dataset": {"name": "NTU-Fi-HumanID"},
         "model": {"name": "Mamba"},
         "dataloader": {"batch_train": 64, "batch_test": 64, "num_workers": 0},
-        "training": {"epochs": None, "lr": 1e-3, "eval_only": False},
+        "training": {
+            "epochs": None,
+            "lr": 1e-3,
+            "eval_only": False,
+            "epochs_by_model": {},
+            "early_stop": {
+                "enabled": False,
+                "patience": 6,
+                "metric": "loss",
+                "min_delta": 0.0001,
+                "restore_best": True,
+            },
+        },
         "ablations": {
             "seq_len": 500,
             "pooling": "mean",

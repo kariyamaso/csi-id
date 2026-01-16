@@ -126,7 +126,7 @@ def load_data_n_model(
             train_epoch = 200
         elif model_name == "RNN":
             model = UT_HAR_RNN()
-            train_epoch = 3000
+            train_epoch = 400
         elif model_name == "GRU":
             model = UT_HAR_GRU()
             train_epoch = 200
@@ -138,7 +138,7 @@ def load_data_n_model(
             train_epoch = 200
         elif model_name == "CNN+GRU":
             model = UT_HAR_CNN_GRU()
-            train_epoch = 200
+            train_epoch = 400
         elif model_name == "ViT":
             model = UT_HAR_ViT()
             train_epoch = 200
@@ -164,7 +164,7 @@ def load_data_n_model(
         )
         if model_name == "MLP":
             model = Widar_MLP(classes["Widar"])
-            train_epoch = 30
+            train_epoch = 100
         elif model_name == "LeNet":
             model = Widar_LeNet(classes["Widar"])
             train_epoch = 100
@@ -179,22 +179,22 @@ def load_data_n_model(
             train_epoch = 100
         elif model_name == "RNN":
             model = Widar_RNN(classes["Widar"])
-            train_epoch = 500
+            train_epoch = 200
         elif model_name == "GRU":
             model = Widar_GRU(classes["Widar"])
-            train_epoch = 200
+            train_epoch = 100
         elif model_name == "LSTM":
             model = Widar_LSTM(classes["Widar"])
-            train_epoch = 200
+            train_epoch = 100
         elif model_name == "BiLSTM":
             model = Widar_BiLSTM(classes["Widar"])
-            train_epoch = 200
+            train_epoch = 100
         elif model_name == "CNN+GRU":
             model = Widar_CNN_GRU(classes["Widar"])
             train_epoch = 200
         elif model_name == "ViT":
             model = Widar_ViT(num_classes=classes["Widar"])
-            train_epoch = 200
+            train_epoch = 100
         else:
             raise ValueError(f"Unsupported model for Widar: {model_name}")
         return train_loader, test_loader, model, train_epoch
@@ -228,10 +228,10 @@ def load_data_n_model(
             "ResNet18": 50,
             "ResNet50": 60,
             "ResNet101": 60,
-            "RNN": 80,
-            "GRU": 50,
-            "LSTM": 50,
-            "BiLSTM": 50,
+            "RNN": 60,
+            "GRU": 30,
+            "LSTM": 30,
+            "BiLSTM": 30,
             "CNN+GRU": 60,
             "ViT": 50,
             "Mamba": 60,
@@ -261,13 +261,13 @@ def load_data_n_model(
             "ResNet18": 30,
             "ResNet50": 30,
             "ResNet101": 30,
-            "RNN": 70,
+            "RNN": 60,
             "GRU": 30,
             "LSTM": 30,
             "BiLSTM": 30,
-            "CNN+GRU": 100,
-            "ViT": 30,
-            "Mamba": 60,
+            "CNN+GRU": 60,
+            "ViT": 50,
+            "Mamba": 30,
         }
     else:  # NTU-Fi-HumanID
         # SenseFi protocol uses test_amp for training.
@@ -295,13 +295,13 @@ def load_data_n_model(
             "ResNet18": 50,
             "ResNet50": 50,
             "ResNet101": 50,
-            "RNN": 75,
-            "GRU": 50,
-            "LSTM": 50,
-            "BiLSTM": 50,
-            "CNN+GRU": 200,
+            "RNN": 60,
+            "GRU": 30,
+            "LSTM": 30,
+            "BiLSTM": 30,
+            "CNN+GRU": 60,
             "ViT": 50,
-            "Mamba": 75,
+            "Mamba": 30,
         }
 
     train_set = _subset_dataset(train_set, train_fraction, seed)
