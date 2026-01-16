@@ -63,3 +63,15 @@ python public/train_all_models.py --dataset Widar --seeds 0 1 2 --config public/
 ```bash
 python public/orchestrate_full_run.py --datasets NTU-Fi-HumanID NTU-Fi_HAR --seeds 0 1 2 --config public/configs/ntu_humanid_all_models.json
 ```
+
+Widar only:
+
+```bash
+python public/orchestrate_full_run.py --datasets Widar --seeds 0 1 2 --config public/configs/widar_all_models.json
+```
+
+UT-HAR only:
+
+```bash
+python public/orchestrate_full_run.py --datasets UT_HAR_data --seeds 0 1 2 --config public/configs/ut_har_all_models.json
+```
