@@ -18,3 +18,14 @@ logs/
 *.zip
 results/
 ntu_fi_results/
+*.csv
+test/
+*.tex
+*.png
+*.pdf
+.latexmkrc
+*.tex
+*.png
+*.aux
+*.fls
+paper*.*

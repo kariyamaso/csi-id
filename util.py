@@ -3,9 +3,38 @@ from UT_HAR_model import *
 from NTU_Fi_model import *
 from widar_model import *
 from self_supervised_model import *
+import numpy as np
 import torch
 
-def load_data_n_model(dataset_name, model_name, root):
+
+def _subset_dataset(dataset, fraction: float, seed: int | None):
+    if fraction is None or fraction >= 1.0:
+        return dataset
+    if fraction <= 0:
+        raise ValueError(f"train_fraction must be in (0, 1], got {fraction}")
+    size = max(1, int(len(dataset) * fraction))
+    rng = np.random.default_rng(0 if seed is None else seed)
+    indices = rng.permutation(len(dataset))[:size].tolist()
+    return torch.utils.data.Subset(dataset, indices)
+
+def load_data_n_model(
+    dataset_name,
+    model_name,
+    root,
+    seq_len: int = 500,
+    pooling: str = "mean",
+    mamba_selective: str = "on",
+    shuffle_subcarriers: bool = False,
+    shuffle_antennas: bool = False,
+    shuffle_seed: int = 0,
+    train_fraction: float = 1.0,
+    noise: str = "none",
+    noise_p: float = 0.0,
+    val_noise: str = "none",
+    val_noise_p: float | None = None,
+    seed: int | None = None,
+):
+    val_noise_p = noise_p if val_noise_p is None else val_noise_p
     classes = {'UT_HAR_data':7,'NTU-Fi-HumanID':14,'NTU-Fi_HAR':6,'Widar':22,'APPLIED':3}
     if model_name == 'SSM' and dataset_name != 'NTU-Fi-HumanID':
         raise ValueError("SSM model is only implemented for NTU-Fi-HumanID.")
@@ -14,6 +43,7 @@ def load_data_n_model(dataset_name, model_name, root):
         data = UT_HAR_dataset(root)
         train_set = torch.utils.data.TensorDataset(data['X_train'],data['y_train'])
         test_set = torch.utils.data.TensorDataset(torch.cat((data['X_val'],data['X_test']),0),torch.cat((data['y_val'],data['y_test']),0))
+        train_set = _subset_dataset(train_set, train_fraction, seed)
         train_loader = torch.utils.data.DataLoader(train_set,batch_size=64,shuffle=True, drop_last=True) # drop_last=True
         test_loader = torch.utils.data.DataLoader(test_set,batch_size=256,shuffle=False)
         if model_name == 'MLP':
@@ -66,8 +96,27 @@ def load_data_n_model(dataset_name, model_name, root):
     elif dataset_name == 'NTU-Fi-HumanID':
         print('using dataset: NTU-Fi-HumanID')
         num_classes = classes['NTU-Fi-HumanID']
-        train_loader = torch.utils.data.DataLoader(dataset=CSI_Dataset(root + 'NTU-Fi-HumanID/test_amp/'), batch_size=64, shuffle=True)
-        test_loader = torch.utils.data.DataLoader(dataset=CSI_Dataset(root + 'NTU-Fi-HumanID/train_amp/'), batch_size=64, shuffle=False)
+        train_set = CSI_Dataset(
+            root + 'NTU-Fi-HumanID/test_amp/',
+            seq_len=seq_len,
+            shuffle_subcarriers=shuffle_subcarriers,
+            shuffle_antennas=shuffle_antennas,
+            shuffle_seed=shuffle_seed,
+            noise=noise,
+            noise_p=noise_p,
+        )
+        test_set = CSI_Dataset(
+            root + 'NTU-Fi-HumanID/train_amp/',
+            seq_len=seq_len,
+            shuffle_subcarriers=shuffle_subcarriers,
+            shuffle_antennas=shuffle_antennas,
+            shuffle_seed=shuffle_seed,
+            noise=val_noise,
+            noise_p=val_noise_p,
+        )
+        train_set = _subset_dataset(train_set, train_fraction, seed)
+        train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=64, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=64, shuffle=False)
         if model_name == 'MLP':
             print("using model: MLP")
             model = NTU_Fi_MLP(num_classes)
@@ -114,11 +163,15 @@ def load_data_n_model(dataset_name, model_name, root):
             train_epoch = 50
         elif model_name == 'SSM':
             print("using model: SSM")
-            model = NTU_Fi_SSM(num_classes)
+            model = NTU_Fi_SSM(num_classes, pooling=pooling)
             train_epoch = 75
         elif model_name == 'Mamba':
             print("using model: Mamba")
-            model = NTU_Fi_Mamba(num_classes)
+            model = NTU_Fi_Mamba(
+                num_classes,
+                pooling=pooling,
+                selective=(mamba_selective != "off"),
+            )
             train_epoch = 75
         return train_loader, test_loader, model, train_epoch
     
@@ -126,8 +179,27 @@ def load_data_n_model(dataset_name, model_name, root):
     elif dataset_name == 'NTU-Fi_HAR':
         print('using dataset: NTU-Fi_HAR')
         num_classes = classes['NTU-Fi_HAR']
-        train_loader = torch.utils.data.DataLoader(dataset=CSI_Dataset(root + 'NTU-Fi_HAR/train_amp/'), batch_size=64, shuffle=True)
-        test_loader = torch.utils.data.DataLoader(dataset=CSI_Dataset(root + 'NTU-Fi_HAR/test_amp/'), batch_size=64, shuffle=False)
+        train_set = CSI_Dataset(
+            root + 'NTU-Fi_HAR/train_amp/',
+            seq_len=seq_len,
+            shuffle_subcarriers=shuffle_subcarriers,
+            shuffle_antennas=shuffle_antennas,
+            shuffle_seed=shuffle_seed,
+            noise=noise,
+            noise_p=noise_p,
+        )
+        test_set = CSI_Dataset(
+            root + 'NTU-Fi_HAR/test_amp/',
+            seq_len=seq_len,
+            shuffle_subcarriers=shuffle_subcarriers,
+            shuffle_antennas=shuffle_antennas,
+            shuffle_seed=shuffle_seed,
+            noise=val_noise,
+            noise_p=val_noise_p,
+        )
+        train_set = _subset_dataset(train_set, train_fraction, seed)
+        train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=64, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=64, shuffle=False)
         if model_name == 'MLP':
             print("using model: MLP")
             model = NTU_Fi_MLP(num_classes)
@@ -174,15 +246,22 @@ def load_data_n_model(dataset_name, model_name, root):
             train_epoch = 30
         elif model_name == 'Mamba':
             print("using model: Mamba")
-            model = NTU_Fi_Mamba(num_classes)
+            model = NTU_Fi_Mamba(
+                num_classes,
+                pooling=pooling,
+                selective=(mamba_selective != "off"),
+            )
             train_epoch = 60
         return train_loader, test_loader, model, train_epoch
 
     elif dataset_name == 'Widar':
         print('using dataset: Widar')
         num_classes = classes['Widar']
-        train_loader = torch.utils.data.DataLoader(dataset=Widar_Dataset(root + 'Widardata/train/'), batch_size=64, shuffle=True)
-        test_loader = torch.utils.data.DataLoader(dataset=Widar_Dataset(root + 'Widardata/test/'), batch_size=128, shuffle=False)
+        train_set = Widar_Dataset(root + 'Widardata/train/')
+        test_set = Widar_Dataset(root + 'Widardata/test/')
+        train_set = _subset_dataset(train_set, train_fraction, seed)
+        train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=64, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=128, shuffle=False)
         if model_name == 'MLP':
             print("using model: MLP")
             model = Widar_MLP(num_classes)
@@ -234,8 +313,27 @@ def load_data_n_model(dataset_name, model_name, root):
         num_classes = classes['APPLIED']
         # Use CSI_Ready_Dataset: expects pre-shaped CSIamp with (streams,114,500)
         # but will tile 1-stream -> 3-stream to match existing models.
-        train_loader = torch.utils.data.DataLoader(dataset=CSI_Ready_Dataset(root + 'APPLIED/train_amp/'), batch_size=32, shuffle=True)
-        test_loader = torch.utils.data.DataLoader(dataset=CSI_Ready_Dataset(root + 'APPLIED/test_amp/'), batch_size=64, shuffle=False)
+        train_set = CSI_Ready_Dataset(
+            root + 'APPLIED/train_amp/',
+            seq_len=seq_len,
+            shuffle_subcarriers=shuffle_subcarriers,
+            shuffle_antennas=shuffle_antennas,
+            shuffle_seed=shuffle_seed,
+            noise=noise,
+            noise_p=noise_p,
+        )
+        test_set = CSI_Ready_Dataset(
+            root + 'APPLIED/test_amp/',
+            seq_len=seq_len,
+            shuffle_subcarriers=shuffle_subcarriers,
+            shuffle_antennas=shuffle_antennas,
+            shuffle_seed=shuffle_seed,
+            noise=val_noise,
+            noise_p=val_noise_p,
+        )
+        train_set = _subset_dataset(train_set, train_fraction, seed)
+        train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=32, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=64, shuffle=False)
         if model_name == 'MLP':
             print("using model: MLP")
             model = NTU_Fi_MLP(num_classes)
@@ -282,7 +380,11 @@ def load_data_n_model(dataset_name, model_name, root):
             train_epoch = 50
         elif model_name == 'Mamba':
             print("using model: Mamba")
-            model = NTU_Fi_Mamba(num_classes)
+            model = NTU_Fi_Mamba(
+                num_classes,
+                pooling=pooling,
+                selective=(mamba_selective != "off"),
+            )
             train_epoch = 60
         else:
             raise ValueError(f"Unsupported model for APPLIED: {model_name}")

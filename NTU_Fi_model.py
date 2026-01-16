@@ -190,7 +190,8 @@ class NTU_Fi_RNN(nn.Module):
         self.rnn = nn.RNN(342,64,num_layers=1)
         self.fc = nn.Linear(64,num_classes)
     def forward(self,x):
-        x = x.view(-1,342,500)
+        seq_len = x.size(-1)
+        x = x.view(-1,342,seq_len)
         x = x.permute(2,0,1)
         _, ht = self.rnn(x)
         outputs = self.fc(ht[-1])
@@ -203,7 +204,8 @@ class NTU_Fi_GRU(nn.Module):
         self.gru = nn.GRU(342,64,num_layers=1)
         self.fc = nn.Linear(64,num_classes)
     def forward(self,x):
-        x = x.view(-1,342,500)
+        seq_len = x.size(-1)
+        x = x.view(-1,342,seq_len)
         x = x.permute(2,0,1)
         _, ht = self.gru(x)
         outputs = self.fc(ht[-1])
@@ -216,7 +218,8 @@ class NTU_Fi_LSTM(nn.Module):
         self.lstm = nn.LSTM(342,64,num_layers=1)
         self.fc = nn.Linear(64,num_classes)
     def forward(self,x):
-        x = x.view(-1,342,500)
+        seq_len = x.size(-1)
+        x = x.view(-1,342,seq_len)
         x = x.permute(2,0,1)
         _, (ht,ct) = self.lstm(x)
         outputs = self.fc(ht[-1])
@@ -229,7 +232,8 @@ class NTU_Fi_BiLSTM(nn.Module):
         self.lstm = nn.LSTM(342,64,num_layers=1,bidirectional=True)
         self.fc = nn.Linear(64,num_classes)
     def forward(self,x):
-        x = x.view(-1,342,500)
+        seq_len = x.size(-1)
+        x = x.view(-1,342,seq_len)
         x = x.permute(2,0,1)
         _, (ht,ct) = self.lstm(x)
         outputs = self.fc(ht[-1])
@@ -255,32 +259,34 @@ class NTU_Fi_CNN_GRU(nn.Module):
         )
     def forward(self,x):
         batch_size = len(x)
-        # batch x 3 x 114 x 500
-        x = x.view(batch_size,3*114,500)
+        seq_len = x.size(-1)
+        # batch x 3 x 114 x T
+        x = x.view(batch_size,3*114,seq_len)
         x = x.permute(0,2,1)
-        # batch x 500 x 342
-        x = x.reshape(batch_size*500,1, 3*114)
-        # (batch x 500) x 1 x 342
+        # batch x T x 342
+        x = x.reshape(batch_size*seq_len,1, 3*114)
+        # (batch x T) x 1 x 342
         x = self.encoder(x)
-        # (batch x 500) x 32 x 8
+        # (batch x T) x 32 x 8
         x = x.permute(0,2,1)
         x = self.mean(x)
-        x = x.reshape(batch_size, 500, 8)
-        # batch x 500 x 8
+        x = x.reshape(batch_size, seq_len, 8)
+        # batch x T x 8
         x = x.permute(1,0,2)
-        # 500 x batch x 8
+        # T x batch x 8
         _, ht = self.gru(x)
         outputs = self.classifier(ht[-1])
         return outputs
     
 
 class DiagonalSSMLayer(nn.Module):
-    def __init__(self, d_model, d_state, dropout=0.1):
+    def __init__(self, d_model, d_state, dropout=0.1, use_skip: bool = True):
         super(DiagonalSSMLayer, self).__init__()
         self.d_state = d_state
         self.B = nn.Linear(d_model, d_state, bias=False)
         self.C = nn.Linear(d_state, d_model, bias=False)
-        self.skip = nn.Linear(d_model, d_model, bias=False)
+        self.use_skip = bool(use_skip)
+        self.skip = nn.Linear(d_model, d_model, bias=False) if self.use_skip else None
         self.log_decay = nn.Parameter(torch.zeros(d_state))
         self.activation = nn.GELU()
         self.dropout = nn.Dropout(dropout)
@@ -296,7 +302,8 @@ class DiagonalSSMLayer(nn.Module):
             yt = self.C(self.activation(state))
             outputs.append(yt.unsqueeze(1))
         y = torch.cat(outputs, dim=1)
-        y = y + self.skip(x)
+        if self.use_skip:
+            y = y + self.skip(x)
         return self.dropout(y)
 
 
@@ -321,7 +328,15 @@ class StateSpaceBlock(nn.Module):
 
 
 class NTU_Fi_SSM(nn.Module):
-    def __init__(self, num_classes, d_model=128, d_state=64, depth=3, dropout=0.1):
+    def __init__(
+        self,
+        num_classes,
+        d_model=128,
+        d_state=64,
+        depth=3,
+        dropout=0.1,
+        pooling: str = "mean",
+    ):
         super(NTU_Fi_SSM, self).__init__()
         self.input_proj = nn.Sequential(
             nn.Linear(342, d_model),
@@ -331,6 +346,8 @@ class NTU_Fi_SSM(nn.Module):
             [StateSpaceBlock(d_model, d_state, dropout) for _ in range(depth)]
         )
         self.norm = nn.LayerNorm(d_model)
+        self.pooling = pooling
+        self.pool_attn = nn.Linear(d_model, 1) if pooling == "attn" else None
         self.head = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.GELU(),
@@ -338,16 +355,30 @@ class NTU_Fi_SSM(nn.Module):
             nn.Linear(d_model, num_classes),
         )
 
-    def forward(self, x):
+    def _pool(self, seq):
+        if self.pooling == "mean":
+            return seq.mean(dim=1)
+        if self.pooling == "last":
+            return seq[:, -1, :]
+        if self.pooling == "attn":
+            weights = torch.softmax(self.pool_attn(seq), dim=1)
+            return (seq * weights).sum(dim=1)
+        raise ValueError(f"Unsupported pooling: {self.pooling}")
+
+    def forward_features(self, x):
         batch_size = x.size(0)
-        seq = x.view(batch_size, 3 * 114, 500)
+        seq_len = x.size(-1)
+        seq = x.view(batch_size, 3 * 114, seq_len)
         seq = seq.permute(0, 2, 1)
         seq = self.input_proj(seq)
         for block in self.blocks:
             seq = block(seq)
         seq = self.norm(seq)
-        seq = seq.mean(dim=1)
-        return self.head(seq)
+        return self._pool(seq)
+
+    def forward(self, x):
+        feats = self.forward_features(x)
+        return self.head(feats)
 
 
 class MambaEncoderBlock(nn.Module):
@@ -373,6 +404,19 @@ class MambaEncoderBlock(nn.Module):
         return residual + self.dropout(x)
 
 
+class NonSelectiveMambaBlock(nn.Module):
+    def __init__(self, d_model, d_state, dropout=0.1):
+        super().__init__()
+        self.norm = nn.LayerNorm(d_model)
+        self.ssm = DiagonalSSMLayer(d_model, d_state, dropout, use_skip=False)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        residual = x
+        x = self.ssm(self.norm(x))
+        return residual + self.dropout(x)
+
+
 class NTU_Fi_Mamba(nn.Module):
     def __init__(
         self,
@@ -383,9 +427,11 @@ class NTU_Fi_Mamba(nn.Module):
         d_conv=4,
         expand=2,
         dropout=0.1,
+        pooling: str = "mean",
+        selective: bool = True,
     ):
         super().__init__()
-        if MambaLayer is None:
+        if selective and MambaLayer is None:
             raise ImportError(
                 "mamba-ssm is required for NTU_Fi_Mamba. "
                 "Install it via `pip install mamba-ssm`."
@@ -394,19 +440,26 @@ class NTU_Fi_Mamba(nn.Module):
             nn.Linear(342, d_model),
             nn.LayerNorm(d_model),
         )
+        block_cls = MambaEncoderBlock if selective else NonSelectiveMambaBlock
         self.blocks = nn.ModuleList(
             [
-                MambaEncoderBlock(
-                    d_model=d_model,
-                    d_state=d_state,
-                    d_conv=d_conv,
-                    expand=expand,
-                    dropout=dropout,
+                (
+                    block_cls(
+                        d_model=d_model,
+                        d_state=d_state,
+                        d_conv=d_conv,
+                        expand=expand,
+                        dropout=dropout,
+                    )
+                    if selective
+                    else block_cls(d_model=d_model, d_state=d_state, dropout=dropout)
                 )
                 for _ in range(depth)
             ]
         )
         self.norm = nn.LayerNorm(d_model)
+        self.pooling = pooling
+        self.pool_attn = nn.Linear(d_model, 1) if pooling == "attn" else None
         self.head = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
@@ -414,15 +467,30 @@ class NTU_Fi_Mamba(nn.Module):
             nn.Linear(d_model // 2, num_classes),
         )
 
-    def forward(self, x):
+    def _pool(self, seq):
+        if self.pooling == "mean":
+            return seq.mean(dim=1)
+        if self.pooling == "last":
+            return seq[:, -1, :]
+        if self.pooling == "attn":
+            weights = torch.softmax(self.pool_attn(seq), dim=1)
+            return (seq * weights).sum(dim=1)
+        raise ValueError(f"Unsupported pooling: {self.pooling}")
+
+    def forward_features(self, x):
         batch_size = x.size(0)
-        seq = x.view(batch_size, 3 * 114, 500)
+        seq_len = x.size(-1)
+        seq = x.view(batch_size, 3 * 114, seq_len)
         seq = seq.permute(0, 2, 1)
         seq = self.input_proj(seq)
         for block in self.blocks:
             seq = block(seq)
-        seq = self.norm(seq).mean(dim=1)
-        return self.head(seq)
+        seq = self.norm(seq)
+        return self._pool(seq)
+
+    def forward(self, x):
+        feats = self.forward_features(x)
+        return self.head(feats)
 
 
 class PatchEmbedding(nn.Module):

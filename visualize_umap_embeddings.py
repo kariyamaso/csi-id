@@ -120,8 +120,9 @@ def _auto_checkpoint_path(dataset: str, model_name: str, ckpt_dir: pathlib.Path)
 
 def _prepare_sequence_inputs(inputs: torch.Tensor) -> torch.Tensor:
     """Reshape CSI tensor into (seq_len, batch, features) for RNN-style models."""
-    x = inputs.view(-1, 342, 500)
-    return x.permute(2, 0, 1)  # 500 x batch x 342
+    seq_len = inputs.size(-1)
+    x = inputs.view(-1, 342, seq_len)
+    return x.permute(2, 0, 1)  # T x batch x 342
 
 
 def _last_hidden_state(recurrent_module: nn.Module, seq: torch.Tensor) -> torch.Tensor:
@@ -169,8 +170,11 @@ def extract_features(
 
     if isinstance(model, NTU_Fi_Mamba):
         # Follow NTU_Fi_Mamba.forward up to pooled, normalized sequence
+        if hasattr(model, "forward_features"):
+            return model.forward_features(inputs)
         b = inputs.size(0)
-        seq = inputs.view(b, 3 * 114, 500).permute(0, 2, 1)  # (b, 500, 342)
+        seq_len = inputs.size(-1)
+        seq = inputs.view(b, 3 * 114, seq_len).permute(0, 2, 1)
         seq = model.input_proj(seq)
         for block in model.blocks:
             seq = block(seq)
@@ -179,19 +183,23 @@ def extract_features(
 
     if isinstance(model, NTU_Fi_CNN_GRU):
         batch_size = inputs.size(0)
-        x = inputs.view(batch_size, 3 * 114, 500).permute(0, 2, 1)  # (batch, 500, 342)
-        x = x.reshape(batch_size * 500, 1, 3 * 114)
+        seq_len = inputs.size(-1)
+        x = inputs.view(batch_size, 3 * 114, seq_len).permute(0, 2, 1)  # (batch, T, 342)
+        x = x.reshape(batch_size * seq_len, 1, 3 * 114)
         x = model.encoder(x)
         x = x.permute(0, 2, 1)
         x = model.mean(x)
-        x = x.reshape(batch_size, 500, 8)
-        x = x.permute(1, 0, 2)  # 500 x batch x 8
+        x = x.reshape(batch_size, seq_len, 8)
+        x = x.permute(1, 0, 2)  # T x batch x 8
         _, ht = model.gru(x)
         return ht[-1]
 
     if isinstance(model, NTU_Fi_SSM):
+        if hasattr(model, "forward_features"):
+            return model.forward_features(inputs)
         b = inputs.size(0)
-        seq = inputs.view(b, 3 * 114, 500).permute(0, 2, 1)
+        seq_len = inputs.size(-1)
+        seq = inputs.view(b, 3 * 114, seq_len).permute(0, 2, 1)
         seq = model.input_proj(seq)
         for block in model.blocks:
             seq = block(seq)
