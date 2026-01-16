@@ -24,6 +24,10 @@ You can override config keys via CLI flags (see `python public/train.py -h`).
 Logs:
 - Per-run stdout/stderr is saved automatically when `config.logging.enabled=true` (default in the example configs): `runs/.../<seed>/stdout.log`.
 
+Metrics:
+- Each run writes `metrics.json` including `acc`, `loss`, `macro_f1`, `macro_recall`.
+- Each run also writes confusion matrix artifacts under the same run folder: `confusion_matrix.json/.npy/.csv` (and `confusion_matrix.png` when Matplotlib is available).
+
 ## Run all models × seeds (example)
 
 ```bash

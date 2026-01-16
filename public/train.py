@@ -60,22 +60,24 @@ def _format_tag(value: float) -> str:
 
 def build_variant(cfg: dict) -> str:
     a = cfg["ablations"]
+    if not isinstance(a, dict):
+        a = {}
     model = cfg["model"]["name"]
     parts = []
     if model == "Mamba":
-        parts.append(f"selective_{a['mamba_selective']}")
-        parts.append(f"pool_{a['pooling']}")
-    parts.append(f"seq{a['seq_len']}")
-    if a["shuffle_subcarriers"]:
+        parts.append(f"selective_{a.get('mamba_selective', 'on')}")
+        parts.append(f"pool_{a.get('pooling', 'mean')}")
+    parts.append(f"seq{a.get('seq_len', 500)}")
+    if a.get("shuffle_subcarriers"):
         parts.append("shuffle_subcarriers")
-    if a["shuffle_antennas"]:
+    if a.get("shuffle_antennas"):
         parts.append("shuffle_antennas")
-    if a["train_fraction"] < 1.0:
-        parts.append(f"frac{_format_tag(a['train_fraction'])}")
-    if a["noise"] != "none":
-        parts.append(f"noise_{a['noise']}_p{_format_tag(a['noise_p'])}")
-    if a["val_noise"] != "none":
-        parts.append(f"valnoise_{a['val_noise']}_p{_format_tag(a['val_noise_p'] or a['noise_p'])}")
+    if float(a.get("train_fraction", 1.0)) < 1.0:
+        parts.append(f"frac{_format_tag(float(a.get('train_fraction', 1.0)))}")
+    if a.get("noise", "none") != "none":
+        parts.append(f"noise_{a.get('noise')}_p{_format_tag(float(a.get('noise_p', 0.0)))}")
+    if a.get("val_noise", "none") != "none":
+        parts.append(f"valnoise_{a.get('val_noise')}_p{_format_tag(float(a.get('val_noise_p') or a.get('noise_p', 0.0)))}")
     return "_".join(parts) if parts else "base"
 
 
@@ -90,6 +92,43 @@ def _ensure_batch(inputs: torch.Tensor, batch_size: int) -> torch.Tensor:
     if remainder:
         expanded = torch.cat([expanded, inputs[:remainder]], dim=0)
     return expanded
+
+
+def _write_confusion_matrix_artifacts(run_dir: Path, cm: list | None) -> None:
+    if cm is None:
+        return
+    cm_np = np.asarray(cm, dtype=np.int64)
+    (run_dir / "confusion_matrix.json").write_text(json.dumps(cm))
+    np.save(run_dir / "confusion_matrix.npy", cm_np)
+    # Optional CSV for quick inspection
+    with (run_dir / "confusion_matrix.csv").open("w") as f:
+        for row in cm_np.tolist():
+            f.write(",".join(str(x) for x in row) + "\n")
+    # Optional PNG heatmap
+    try:
+        import os
+        import pathlib
+        cache_root = pathlib.Path(".cache")
+        os.environ.setdefault("XDG_CACHE_HOME", str(cache_root))
+        os.environ.setdefault("MPLCONFIGDIR", str(cache_root / "matplotlib"))
+        cache_root.mkdir(parents=True, exist_ok=True)
+        (cache_root / "matplotlib").mkdir(parents=True, exist_ok=True)
+        (cache_root / "fontconfig").mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("FC_CACHEDIR", str(cache_root / "fontconfig"))
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(5.5, 5.0))
+        ax.imshow(cm_np, interpolation="nearest", cmap="Blues")
+        ax.set_title("Confusion Matrix")
+        ax.set_xlabel("Pred")
+        ax.set_ylabel("True")
+        fig.tight_layout()
+        fig.savefig(run_dir / "confusion_matrix.png", dpi=200)
+        plt.close(fig)
+    except Exception:
+        pass
 
 
 def train(model, tensor_loader, num_epochs, learning_rate, criterion, device):
@@ -127,23 +166,68 @@ def train(model, tensor_loader, num_epochs, learning_rate, criterion, device):
 
 def test(model, tensor_loader, criterion, device, *, verbose: bool = True):
     model.eval()
-    test_acc = 0
-    test_loss = 0
+    test_loss = 0.0
+    all_preds = []
+    all_labels = []
+    num_classes = None
     with torch.no_grad():
         for inputs, labels in tensor_loader:
             inputs = inputs.to(device)
             labels = labels.to(device, dtype=torch.long)
             outputs = model(inputs).float()
+            if num_classes is None:
+                num_classes = int(outputs.shape[1])
             loss = criterion(outputs, labels)
             predict_y = torch.argmax(outputs, dim=1).to(device)
-            accuracy = (predict_y == labels.to(device)).sum().item() / labels.size(0)
-            test_acc += accuracy
             test_loss += loss.item() * inputs.size(0)
-    test_acc = test_acc / len(tensor_loader)
+            all_preds.append(predict_y.detach().cpu())
+            all_labels.append(labels.detach().cpu())
+
+    if not all_labels:
+        return {
+            "acc": None,
+            "loss": None,
+            "macro_f1": None,
+            "macro_recall": None,
+            "confusion_matrix": None,
+        }
+
+    labels_np = torch.cat(all_labels, dim=0).numpy()
+    preds_np = torch.cat(all_preds, dim=0).numpy()
+    if num_classes is None:
+        num_classes = int(max(labels_np.max(initial=0), preds_np.max(initial=0)) + 1)
+
+    cm = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for y, p in zip(labels_np, preds_np):
+        if 0 <= y < num_classes and 0 <= p < num_classes:
+            cm[int(y), int(p)] += 1
+
+    correct = int(np.trace(cm))
+    total = int(cm.sum())
+    acc = (correct / total) if total > 0 else None
+
+    tp = np.diag(cm).astype(np.float64)
+    fp = cm.sum(axis=0).astype(np.float64) - tp
+    fn = cm.sum(axis=1).astype(np.float64) - tp
+    precision = np.divide(tp, tp + fp, out=np.zeros_like(tp), where=(tp + fp) > 0)
+    recall = np.divide(tp, tp + fn, out=np.zeros_like(tp), where=(tp + fn) > 0)
+    f1 = np.divide(2 * precision * recall, precision + recall, out=np.zeros_like(tp), where=(precision + recall) > 0)
+    macro_recall = float(np.mean(recall)) if num_classes > 0 else None
+    macro_f1 = float(np.mean(f1)) if num_classes > 0 else None
+
     test_loss = test_loss / len(tensor_loader.dataset)
-    if verbose:
-        print(f"validation accuracy:{float(test_acc):.4f}, loss:{float(test_loss):.5f}")
-    return {"acc": float(test_acc), "loss": float(test_loss)}
+    if verbose and acc is not None:
+        print(
+            f"validation accuracy:{float(acc):.4f}, loss:{float(test_loss):.5f}, "
+            f"macro_f1:{macro_f1:.4f}, macro_recall:{macro_recall:.4f}"
+        )
+    return {
+        "acc": float(acc) if acc is not None else None,
+        "loss": float(test_loss),
+        "macro_f1": macro_f1,
+        "macro_recall": macro_recall,
+        "confusion_matrix": cm.tolist(),
+    }
 
 
 def parse_args():
@@ -200,7 +284,8 @@ def main():
         cfg["training"]["eval_only"] = True
     if args.measure_efficiency is not None:
         cfg["efficiency"]["enabled"] = bool(args.measure_efficiency)
-    a = cfg["ablations"]
+    a = cfg.get("ablations") or {}
+    cfg["ablations"] = a
     if args.seq_len is not None:
         a["seq_len"] = args.seq_len
     if args.pooling is not None:
@@ -439,6 +524,8 @@ def main():
             torch.save(model.state_dict(), ckpt_path)
             print(f"Saved checkpoint to {ckpt_path}")
 
+        _write_confusion_matrix_artifacts(run_dir, test_stats.get("confusion_matrix"))
+
         metrics.update(
             {
                 "dataset": cfg["dataset"]["name"],
@@ -447,16 +534,18 @@ def main():
                 "seed": args.seed,
                 "acc": test_stats.get("acc"),
                 "loss": test_stats.get("loss"),
-                "pooling": a["pooling"],
-                "seq_len": a["seq_len"],
-                "mamba_selective": a["mamba_selective"],
-                "shuffle_subcarriers": bool(a["shuffle_subcarriers"]),
-                "shuffle_antennas": bool(a["shuffle_antennas"]),
-                "train_fraction": a["train_fraction"],
-                "noise": a["noise"],
-                "noise_p": a["noise_p"],
-                "val_noise": a["val_noise"],
-                "val_noise_p": a["val_noise_p"],
+                "macro_f1": test_stats.get("macro_f1"),
+                "macro_recall": test_stats.get("macro_recall"),
+                "pooling": a.get("pooling", "mean"),
+                "seq_len": a.get("seq_len", 500),
+                "mamba_selective": a.get("mamba_selective", "on"),
+                "shuffle_subcarriers": bool(a.get("shuffle_subcarriers", False)),
+                "shuffle_antennas": bool(a.get("shuffle_antennas", False)),
+                "train_fraction": a.get("train_fraction", 1.0),
+                "noise": a.get("noise", "none"),
+                "noise_p": a.get("noise_p", 0.0),
+                "val_noise": a.get("val_noise", "none"),
+                "val_noise_p": a.get("val_noise_p", a.get("noise_p", 0.0)),
                 "epochs": epochs,
                 "epochs_ran": train_stats.get("epochs_ran", epochs if not cfg["training"]["eval_only"] else 0),
                 "lr": lr,
