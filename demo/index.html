@@ -1,0 +1,1168 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SilentSense · CSI-ID Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f5f7fb;
+    --bg-accent: #eef2ff;
+    --surface: #ffffff;
+    --border: #e4e8f0;
+    --border-strong: #cbd5e1;
+    --text: #0f172a;
+    --muted: #64748b;
+    --subtle: #94a3b8;
+    --brand: #4f46e5;
+    --brand-soft: #eef2ff;
+    --brand-ink: #312e81;
+    --teal: #0ea5e9;
+    --good: #10b981;
+    --good-soft: #ecfdf5;
+    --bad: #ef4444;
+    --bad-soft: #fef2f2;
+    --warn: #f59e0b;
+    --track: #eef2f7;
+    --shadow-sm: 0 1px 2px rgba(15,23,42,.04);
+    --shadow-md: 0 4px 16px -6px rgba(15,23,42,.1), 0 2px 4px -2px rgba(15,23,42,.06);
+    --shadow-lg: 0 20px 40px -16px rgba(79,70,229,.18), 0 8px 24px -12px rgba(15,23,42,.08);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: "JetBrains Mono", SFMono-Regular, Menlo, monospace; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .tiny { font-size: 11px; }
+
+  /* ── Topbar ─────────────────────────────────────────── */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(255,255,255,.85);
+    backdrop-filter: saturate(180%) blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner {
+    max-width: 1400px; margin: 0 auto; padding: 12px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .brand-mark {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--brand) 0%, #7c3aed 100%);
+    box-shadow: 0 6px 18px -6px rgba(79,70,229,.7);
+    display: grid; place-items: center; color: white; font-size: 14px;
+  }
+  .brand-text { letter-spacing: -0.01em; }
+  .brand-text .sep { color: var(--border-strong); margin: 0 6px; }
+  .brand-tag {
+    padding: 2px 8px; font-size: 11px; font-weight: 600;
+    background: var(--brand-soft); color: var(--brand-ink);
+    border-radius: 999px;
+  }
+  .topbar-spacer { flex: 1; }
+  .topbar-link {
+    color: var(--muted); font-weight: 500; font-size: 13px;
+    padding: 6px 10px; border-radius: 8px; text-decoration: none;
+  }
+  .topbar-link:hover { color: var(--text); background: var(--bg-accent); }
+
+  /* ── Layout ─────────────────────────────────────────── */
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  .section-title {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 4px 0 12px;
+  }
+  .section-title h3 {
+    margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .section-title .hint { color: var(--subtle); font-size: 12px; }
+
+  /* ── KPI cards ─────────────────────────────────────── */
+  .kpi-row {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-bottom: 24px;
+  }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; gap: 6px;
+    position: relative; overflow: hidden;
+  }
+  .kpi::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+    background: var(--brand);
+  }
+  .kpi.kpi-brand::before { background: linear-gradient(90deg, var(--brand), #7c3aed); }
+  .kpi.kpi-good::before { background: linear-gradient(90deg, var(--good), #22d3ee); }
+  .kpi.kpi-teal::before { background: linear-gradient(90deg, var(--teal), var(--brand)); }
+  .kpi.kpi-amber::before { background: linear-gradient(90deg, var(--warn), #fb923c); }
+  .kpi-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .05em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .kpi-value {
+    font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--text);
+  }
+  .kpi-sub { color: var(--muted); font-size: 12px; }
+  .kpi-sub b { color: var(--text); }
+
+  /* ── Card primitive ─────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .card-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: linear-gradient(180deg, #fff 0%, #fafbff 100%);
+  }
+  .card-head h2 {
+    margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+  }
+  .card-head .sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .card-body { padding: 18px; }
+
+  /* ── Main grid ─────────────────────────────────────── */
+  .stage {
+    display: grid; gap: 16px;
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 24px;
+  }
+  @media (min-width: 1024px) {
+    .stage { grid-template-columns: 360px minmax(0, 1fr); }
+  }
+
+  /* ── Controls ─────────────────────────────────────── */
+  .field { margin-bottom: 12px; }
+  .field-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 6px;
+  }
+  select, button {
+    width: 100%; appearance: none;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: 10px 12px; font-size: 14px; font-family: inherit;
+    transition: border-color .15s, box-shadow .15s, transform .05s;
+  }
+  select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px; }
+  select:focus, button:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
+  button { cursor: pointer; font-weight: 500; }
+  button:hover { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-ink); }
+  button:active { transform: translateY(1px); }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row button { flex: 1; }
+
+  .meta-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500; color: var(--muted);
+    margin-top: 6px;
+  }
+  .meta-chip .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--brand); }
+
+  /* ── Heatmap ─────────────────────────────────────── */
+  .heatmap-card { padding: 14px; }
+  .heatmap-wrap {
+    border-radius: 10px; overflow: hidden;
+    background: linear-gradient(180deg, #111827 0%, #0b1020 100%);
+    padding: 8px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .heatmap-wrap img {
+    width: 100%; height: auto; display: block; border-radius: 6px;
+    image-rendering: pixelated;
+  }
+  .heatmap-axes {
+    display: flex; justify-content: space-between;
+    color: var(--muted); font-size: 11px; margin-top: 8px; padding: 0 4px;
+  }
+  .heatmap-meta { color: var(--subtle); font-size: 11px; margin-top: 6px; padding: 0 4px; word-break: break-all; }
+  .subject-badge {
+    margin-top: 12px; padding: 12px 14px;
+    background: linear-gradient(135deg, #ecfdf5 0%, #eef2ff 100%);
+    border: 1px solid var(--border); border-radius: 10px;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .subject-badge-label {
+    font-size: 10.5px; color: var(--muted); letter-spacing: .05em;
+    text-transform: uppercase; font-weight: 600;
+  }
+  .subject-badge-value {
+    font-size: 22px; font-weight: 700; letter-spacing: -.02em;
+    font-family: "JetBrains Mono", monospace;
+    color: var(--good);
+  }
+
+  /* ── Prediction hero ─────────────────────────────── */
+  .pred-hero {
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px;
+    padding: 20px 22px;
+    background: linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  @media (min-width: 720px) {
+    .pred-hero { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+  }
+  .pred-primary h1 {
+    margin: 0; font-size: 36px; font-weight: 700; letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .pred-primary .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .pred-verdict {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600;
+    padding: 4px 10px; border-radius: 999px;
+    margin-bottom: 10px;
+  }
+  .pred-verdict.ok { background: var(--good-soft); color: var(--good); }
+  .pred-verdict.bad { background: var(--bad-soft); color: var(--bad); }
+  .pred-conf-ring {
+    display: grid; place-items: center; gap: 4px;
+    padding: 8px;
+  }
+  .ring-svg { width: 110px; height: 110px; }
+  .pred-conf-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+
+  .pred-model-strip {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .pred-model-strip .cell {
+    padding: 12px 14px; border-right: 1px solid var(--border);
+  }
+  .pred-model-strip .cell:last-child { border-right: 0; }
+  .pred-model-strip .cell .lbl {
+    font-size: 10.5px; color: var(--muted); letter-spacing: .04em;
+    text-transform: uppercase; font-weight: 600;
+  }
+  .pred-model-strip .cell .val {
+    font-size: 16px; font-weight: 600; color: var(--text); margin-top: 2px;
+  }
+  @media (max-width: 520px) {
+    .pred-model-strip { grid-template-columns: repeat(2, 1fr); }
+    .pred-model-strip .cell:nth-child(2) { border-right: 0; }
+  }
+
+  /* ── Bars ─────────────────────────────────────── */
+  .bars { display: flex; flex-direction: column; gap: 8px; }
+  .bar-row {
+    display: grid; grid-template-columns: 110px 1fr 56px;
+    gap: 10px; align-items: center;
+    font-size: 13px;
+  }
+  .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .bar-outer { background: var(--track); height: 10px; border-radius: 999px; overflow: hidden; }
+  .bar-row .bar-inner {
+    display: block;
+    height: 100%; border-radius: 999px;
+    background: var(--brand);
+    transition: width .4s cubic-bezier(.2,.8,.2,1);
+  }
+  .bar-row .val { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .bar-row.is-true .name { color: var(--good); font-weight: 700; }
+  .bar-row.is-true .bar-inner { background: var(--good); }
+
+  /* ── Class strip (vertical bars, one per class) ── */
+  .strip {
+    display: grid;
+    gap: 6px;
+    padding: 18px 10px 8px;
+    background: linear-gradient(180deg, #fafbff 0%, #f1f4fd 100%);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  .strip-bars {
+    display: grid;
+    gap: 4px;
+    align-items: end;
+    height: 120px;
+  }
+  .strip-labels {
+    display: grid;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .strip-col {
+    position: relative;
+    display: flex; align-items: flex-end; justify-content: center;
+    height: 100%;
+  }
+  .strip-col .col-bar {
+    width: 100%; min-height: 2px;
+    background: #c7d2fe;
+    border-radius: 6px 6px 0 0;
+    transition: height .4s cubic-bezier(.2,.8,.2,1), background .15s;
+  }
+  .strip-col.is-pred .col-bar { background: linear-gradient(180deg, var(--brand), #7c3aed); box-shadow: 0 6px 16px -6px rgba(79,70,229,.5); }
+  .strip-col.is-true .col-bar { background: linear-gradient(180deg, var(--good), #059669); box-shadow: 0 6px 16px -6px rgba(16,185,129,.45); }
+  .strip-col.is-both .col-bar { background: linear-gradient(180deg, var(--good), var(--brand)); box-shadow: 0 8px 18px -6px rgba(16,185,129,.55); }
+  .strip-col .col-val {
+    position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .strip-col.is-pred .col-val, .strip-col.is-true .col-val, .strip-col.is-both .col-val {
+    color: var(--text); font-weight: 600;
+  }
+  .strip-lbl {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-size: 11px; color: var(--muted);
+    font-family: "JetBrains Mono", monospace;
+  }
+  .strip-lbl .dot {
+    width: 4px; height: 4px; border-radius: 999px; background: transparent;
+  }
+  .strip-lbl.is-pred { color: var(--brand-ink); font-weight: 700; }
+  .strip-lbl.is-pred .dot { background: var(--brand); }
+  .strip-lbl.is-true { color: var(--good); font-weight: 700; }
+  .strip-lbl.is-true .dot { background: var(--good); }
+  .strip-lbl.is-both { color: var(--good); font-weight: 700; }
+  .strip-lbl.is-both .dot { background: linear-gradient(90deg, var(--good), var(--brand)); }
+  .strip-legend {
+    display: flex; gap: 14px; font-size: 11px; color: var(--muted);
+    margin-top: 8px; flex-wrap: wrap; padding-left: 4px;
+  }
+  .strip-legend .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
+
+  /* ── Model comparison rows ────────────────────────── */
+  .cmp-row {
+    display: grid; grid-template-columns: 130px 1fr 80px 60px;
+    gap: 10px; align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .cmp-row:last-child { border-bottom: 0; }
+  .cmp-row .name {
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 500;
+  }
+  .cmp-row .name .badge {
+    font-size: 10.5px; padding: 1px 6px; border-radius: 6px; font-weight: 600;
+  }
+  .cmp-row .name .badge.ok { background: var(--good-soft); color: var(--good); }
+  .cmp-row .name .badge.bad { background: var(--bad-soft); color: var(--bad); }
+  .cmp-row .bar-outer { background: #e2e8f0; height: 10px; border-radius: 999px; overflow: hidden; }
+  .cmp-row .bar-inner { display: block; height: 100%; background: var(--brand); border-radius: 999px; transition: width .35s; box-shadow: inset 0 -2px 0 rgba(0,0,0,.08); }
+  .cmp-row.correct .bar-inner { background: linear-gradient(90deg, var(--good), #34d399); }
+  .cmp-row.wrong .bar-inner { background: linear-gradient(90deg, var(--bad), #f97316); }
+  .cmp-row .pred-label { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp-row .val { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+
+  /* ── Insight grid ─────────────────────────────── */
+  .insight-grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    margin-bottom: 24px;
+  }
+
+  /* ── Tabs ────────────────────────────────────── */
+  .tabs {
+    display: flex; gap: 4px; padding: 4px;
+    background: var(--bg-accent);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    width: fit-content; flex-wrap: wrap;
+  }
+  .tabs button {
+    width: auto; background: transparent; border: 0;
+    font-size: 13px; font-weight: 500; color: var(--muted);
+    padding: 6px 12px; border-radius: 7px;
+    transition: all .15s;
+  }
+  .tabs button:hover { color: var(--text); background: rgba(255,255,255,.7); }
+  .tabs button.active {
+    color: var(--brand-ink); background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* ── Table ────────────────────────────────────── */
+  .table-wrap { overflow: auto; max-height: 540px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface);
+    text-align: left; font-weight: 600; color: var(--muted);
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+    white-space: nowrap;
+  }
+  thead th.num { text-align: right; }
+  thead th:hover { color: var(--text); }
+  thead th.sorted { color: var(--brand); }
+  thead th.sorted::after { content: " ▾"; }
+  thead th.sorted.asc::after { content: " ▴"; }
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  tbody tr:hover td { background: #fafbff; }
+  tbody tr.highlight td { background: linear-gradient(90deg, var(--brand-soft) 0%, transparent 60%); }
+  .badge-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .02em;
+    background: var(--brand-soft); color: var(--brand-ink);
+  }
+  .badge-pill.good { background: var(--good-soft); color: var(--good); }
+
+  /* ── Pool bars ─────────────────────────────────── */
+  .pool-row {
+    display: grid; grid-template-columns: 110px 1fr 100px;
+    gap: 12px; align-items: center;
+    padding: 7px 0;
+    font-size: 13px;
+  }
+  .pool-row .name { font-weight: 500; color: var(--text); }
+  .pool-row.top-model .name { color: var(--brand-ink); font-weight: 700; }
+  .pool-row .bar-outer {
+    background: #e2e8f0; height: 12px; border-radius: 999px; overflow: hidden;
+    position: relative;
+  }
+  .pool-row .bar-inner {
+    display: block;
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, #22d3ee, var(--teal));
+    transition: width .4s cubic-bezier(.2,.8,.2,1);
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,.08);
+  }
+  .pool-row.top-model .bar-inner {
+    background: linear-gradient(90deg, var(--brand), #7c3aed);
+  }
+  .pool-row .val { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 500; }
+  .pool-row .val {
+    text-align: right; color: var(--muted);
+    font-variant-numeric: tabular-nums; font-size: 12px;
+  }
+
+  /* ── Footer ────────────────────────────────────── */
+  footer {
+    color: var(--muted); font-size: 12px; text-align: center;
+    padding: 32px 16px 48px;
+  }
+
+  /* ── Utilities ─────────────────────────────────── */
+  .hide { display: none !important; }
+  .divider { height: 1px; background: var(--border); margin: 14px 0; }
+  .grid-heads { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+  .spark {
+    display: inline-block; vertical-align: middle;
+    width: 72px; height: 18px; margin-left: 6px;
+  }
+
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); flex-wrap: wrap; margin-top: 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">✦</div>
+      <div class="brand-text">
+        SilentSense
+        <span class="sep">/</span>
+        <span style="color:var(--muted);font-weight:500">CSI-ID Studio</span>
+      </div>
+      <span class="brand-tag">v0.1 · demo</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="#leaderboard">Leaderboard</a>
+    <a class="topbar-link" href="#insight">Model Insight</a>
+    <a class="topbar-link" href="#demo">Live Inference</a>
+  </div>
+</div>
+
+<main class="container">
+
+  <!-- KPI row -->
+  <div class="kpi-row">
+    <div class="kpi kpi-brand">
+      <div class="kpi-label">Best model</div>
+      <div class="kpi-value" id="kpi-best-model">—</div>
+      <div class="kpi-sub" id="kpi-best-model-sub">—</div>
+    </div>
+    <div class="kpi kpi-good">
+      <div class="kpi-label">Best accuracy</div>
+      <div class="kpi-value" id="kpi-best-acc">—</div>
+      <div class="kpi-sub" id="kpi-best-acc-sub">10-seed mean</div>
+    </div>
+    <div class="kpi kpi-teal">
+      <div class="kpi-label">Fastest model</div>
+      <div class="kpi-value" id="kpi-fast">—</div>
+      <div class="kpi-sub" id="kpi-fast-sub">CPU latency, batch = 1</div>
+    </div>
+    <div class="kpi kpi-amber">
+      <div class="kpi-label">Live samples</div>
+      <div class="kpi-value" id="kpi-samples">—</div>
+      <div class="kpi-sub" id="kpi-samples-sub">across all available models</div>
+    </div>
+  </div>
+
+  <!-- Live Inference -->
+  <div class="section-title" id="demo">
+    <h3>Live inference</h3>
+    <div class="hint">WiFi CSI 振幅 → クラス確率</div>
+  </div>
+
+  <div class="stage">
+
+    <!-- Controls column -->
+    <aside class="card">
+      <div class="card-head">
+        <h2>Controls</h2>
+        <span class="sub" id="dataset-help">—</span>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <div class="field-label">Dataset</div>
+          <select id="sel-dataset"></select>
+        </div>
+        <div class="field">
+          <div class="field-label">Sample <span class="muted" id="sample-help"></span></div>
+          <select id="sel-sample"></select>
+        </div>
+        <div class="field">
+          <div class="field-label">Model <span class="muted" id="model-help"></span></div>
+          <select id="sel-model"></select>
+        </div>
+        <div class="btn-row">
+          <button id="btn-random">🎲 Random</button>
+          <button id="btn-next">Next ›</button>
+        </div>
+      </div>
+
+      <div class="card-head" style="border-top:1px solid var(--border)">
+        <h2>Input · CSI amplitude</h2>
+        <span class="sub mono" id="heatmap-src">—</span>
+      </div>
+      <div class="heatmap-card">
+        <div class="heatmap-wrap">
+          <img id="heatmap" alt="CSI amplitude heatmap" />
+        </div>
+        <div class="heatmap-axes"><span>time →</span><span>subcarrier ↑</span></div>
+        <div class="subject-badge">
+          <span class="subject-badge-label">True label</span>
+          <span class="subject-badge-value" id="subject-badge">—</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Prediction column -->
+    <section class="card">
+      <div class="pred-hero">
+        <div class="pred-primary">
+          <div class="pred-verdict" id="pred-verdict">…</div>
+          <h1 id="pred-label">—</h1>
+          <div class="sub">
+            <b id="pred-model-name">—</b> predicts the class above ·
+            true label <b id="true-label">—</b>
+          </div>
+        </div>
+        <div class="pred-conf-ring">
+          <svg class="ring-svg" viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="#e0e7ff" stroke-width="12"/>
+            <circle id="conf-arc" cx="60" cy="60" r="50" fill="none" stroke="url(#grad-ring)" stroke-width="12"
+                    stroke-dasharray="0 314" stroke-linecap="round" transform="rotate(-90 60 60)"/>
+            <defs>
+              <linearGradient id="grad-ring" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#4f46e5"/>
+                <stop offset="100%" stop-color="#7c3aed"/>
+              </linearGradient>
+            </defs>
+            <text id="conf-text" x="60" y="64" text-anchor="middle" font-family="Inter" font-size="22" font-weight="700" fill="#0f172a">0%</text>
+            <text x="60" y="82" text-anchor="middle" font-family="Inter" font-size="10" fill="#64748b">confidence</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="pred-model-strip">
+        <div class="cell"><div class="lbl">Test acc</div><div class="val" id="m-acc">—</div></div>
+        <div class="cell"><div class="lbl">Macro F1</div><div class="val" id="m-f1">—</div></div>
+        <div class="cell"><div class="lbl">Params</div><div class="val" id="m-params">—</div></div>
+        <div class="cell"><div class="lbl">Latency (b=1)</div><div class="val" id="m-lat">—</div></div>
+      </div>
+
+      <div class="card-body">
+        <div class="section-title">
+          <h3 id="strip-title">All-class confidence</h3>
+          <span class="hint">
+            <span class="sw" style="display:inline-block;width:10px;height:10px;background:var(--brand);border-radius:2px;vertical-align:-1px"></span> prediction ·
+            <span class="sw" style="display:inline-block;width:10px;height:10px;background:var(--good);border-radius:2px;vertical-align:-1px;margin-left:6px"></span> ground truth
+          </span>
+        </div>
+        <div class="strip" id="class-strip"></div>
+        <details style="margin-top:14px">
+          <summary class="muted small" style="cursor:pointer">Top-5 list</summary>
+          <div class="bars" id="bars" style="margin-top:10px"></div>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <!-- Insight row -->
+  <div class="section-title" id="insight">
+    <h3>Model insight</h3>
+    <div class="hint">How models disagree on this sample + overall behaviour</div>
+  </div>
+
+  <div class="insight-grid">
+    <div class="card">
+      <div class="card-head">
+        <h2>All models on this sample</h2>
+        <span class="sub">Top-1 prediction</span>
+      </div>
+      <div class="card-body" id="cmp-all"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Per-model accuracy · demo pool</h2>
+        <span class="sub">live inference</span>
+      </div>
+      <div class="card-body" id="pool-acc"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Confusion matrix</h2>
+        <span class="sub" id="cm-subtitle">seed 0 · full test set</span>
+      </div>
+      <div class="card-body" style="overflow:auto" id="cm-wrap"></div>
+    </div>
+  </div>
+
+  <!-- Leaderboard -->
+  <div class="section-title" id="leaderboard">
+    <h3>Benchmark</h3>
+    <div class="hint">10-seed mean — from <code class="mono">result/artifacts/aggregate/summary.csv</code></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <h2>Accuracy vs Latency — Pareto view</h2>
+      <span class="sub">bubble size ∝ √params · log-x</span>
+    </div>
+    <div class="card-body">
+      <div id="pareto-wrap"></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--brand)"></span>loaded in live demo</span>
+        <span><span class="sw" style="background:var(--good)"></span>benchmark-only</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Performance leaderboard</h2>
+      <div class="tabs" id="summary-tabs"></div>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="table-wrap">
+        <table id="tbl-summary">
+          <thead>
+            <tr>
+              <th data-key="model">Model</th>
+              <th data-key="acc_mean" class="num sorted">Accuracy</th>
+              <th data-key="macro_f1_mean" class="num">Macro F1</th>
+              <th data-key="params_total_mean" class="num">Params</th>
+              <th data-key="latency_ms_batch1_mean" class="num">Lat b=1</th>
+              <th data-key="latency_ms_batch64_mean" class="num">Lat b=64</th>
+              <th data-key="peak_gpu_mem_mb_mean" class="num">Peak GPU</th>
+              <th data-key="train_time_total_sec_mean" class="num">Train time</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  SilentSense / CSI-ID · 推論はビルド時に CPU で実行し、結果を <code class="mono">demo/data.json</code> に固めて配信しています。HTML 単体で再生可能です。
+</footer>
+
+<script>
+const state = {
+  data: null,
+  dataset: null,
+  sampleId: null,
+  model: null,
+  sortKey: "acc_mean",
+  sortAsc: false,
+  summaryDataset: null,
+};
+
+async function load() {
+  if (window.__DEMO_DATA__) {
+    state.data = window.__DEMO_DATA__;
+  } else {
+    const r = await fetch("data.json");
+    if (!r.ok) throw new Error("Failed to fetch data.json");
+    state.data = await r.json();
+  }
+  const datasetNames = Object.keys(state.data.datasets);
+  state.dataset = datasetNames[0];
+  state.summaryDataset = state.dataset;
+  const summaryDatasets = [...new Set(state.data.summary.map(r => r.dataset))];
+  populateDatasets(datasetNames);
+  populateSummaryTabs(summaryDatasets);
+  onDatasetChange();
+  renderSummary();
+}
+
+function populateDatasets(names) {
+  const sel = document.getElementById("sel-dataset");
+  sel.innerHTML = "";
+  for (const n of names) {
+    const o = document.createElement("option");
+    o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  }
+  sel.value = state.dataset;
+  sel.onchange = () => { state.dataset = sel.value; state.summaryDataset = sel.value; onDatasetChange(); renderSummary(); };
+}
+
+function populateSummaryTabs(names) {
+  const tabs = document.getElementById("summary-tabs");
+  tabs.innerHTML = "";
+  for (const n of names) {
+    const b = document.createElement("button");
+    b.textContent = n;
+    if (n === state.summaryDataset) b.classList.add("active");
+    b.onclick = () => { state.summaryDataset = n; renderSummary(); };
+    tabs.appendChild(b);
+  }
+}
+
+function onDatasetChange() {
+  const ds = state.data.datasets[state.dataset];
+  document.getElementById("dataset-help").textContent = ds.task;
+  const selS = document.getElementById("sel-sample");
+  selS.innerHTML = "";
+  for (const s of ds.samples) {
+    const o = document.createElement("option");
+    o.value = s.id;
+    o.textContent = `[${s.class_name}]  ${s.id.split("__").slice(-1)[0]}`;
+    selS.appendChild(o);
+  }
+  state.sampleId = ds.samples[0].id;
+  selS.value = state.sampleId;
+  selS.onchange = () => { state.sampleId = selS.value; render(); };
+
+  const selM = document.getElementById("sel-model");
+  selM.innerHTML = "";
+  for (const m of ds.models) {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m;
+    selM.appendChild(o);
+  }
+  const perf = summaryFor(state.dataset);
+  const best = [...ds.models].sort((a, b) => (perf[b]?.acc_mean ?? 0) - (perf[a]?.acc_mean ?? 0))[0];
+  state.model = best;
+  selM.value = state.model;
+  selM.onchange = () => { state.model = selM.value; render(); };
+
+  updateKpis(perf, ds);
+  render();
+}
+
+function summaryFor(dataset) {
+  const out = {};
+  for (const r of state.data.summary) if (r.dataset === dataset) out[r.model] = r;
+  return out;
+}
+
+function updateKpis(perf, ds) {
+  const rows = Object.values(perf);
+  const byAcc = rows.filter(r => r.acc_mean != null).sort((a, b) => b.acc_mean - a.acc_mean);
+  const byLat = rows.filter(r => r.latency_ms_batch1_mean != null).sort((a, b) => a.latency_ms_batch1_mean - b.latency_ms_batch1_mean);
+  const best = byAcc[0];
+  const fastest = byLat[0];
+  document.getElementById("kpi-best-model").textContent = best ? best.model : "—";
+  document.getElementById("kpi-best-model-sub").textContent = best
+    ? `${ds.task.split("(")[0].trim()}`
+    : "—";
+  document.getElementById("kpi-best-acc").textContent = best ? (best.acc_mean * 100).toFixed(2) + "%" : "—";
+  document.getElementById("kpi-best-acc-sub").textContent = best
+    ? `${best.model} · ±${(best.acc_std * 100).toFixed(2)}%`
+    : "";
+  document.getElementById("kpi-fast").textContent = fastest ? fastest.latency_ms_batch1_mean.toFixed(2) + " ms" : "—";
+  document.getElementById("kpi-fast-sub").textContent = fastest ? `${fastest.model} · ${(fastest.acc_mean * 100).toFixed(1)}% acc` : "—";
+  document.getElementById("kpi-samples").textContent = `${ds.samples.length} × ${ds.models.length}`;
+  document.getElementById("kpi-samples-sub").textContent = `${ds.samples.length} samples × ${ds.models.length} models`;
+}
+
+function getSample() {
+  const ds = state.data.datasets[state.dataset];
+  return ds.samples.find(s => s.id === state.sampleId) || ds.samples[0];
+}
+
+function render() {
+  const ds = state.data.datasets[state.dataset];
+  const sample = getSample();
+  const classes = ds.classes;
+  const perf = summaryFor(state.dataset);
+
+  const img = document.getElementById("heatmap");
+  img.src = sample.heatmap;
+  document.getElementById("heatmap-src").textContent = sample.file.split("/").pop();
+  document.getElementById("subject-badge").textContent =
+    `${humanLabel(state.dataset, sample.class_name)} · idx ${sample.class_idx}`;
+  document.getElementById("strip-title").textContent =
+    state.dataset === "NTU-Fi-HumanID" ? "Confidence across all 14 subjects" :
+    state.dataset === "NTU-Fi_HAR" ? "Confidence across all 6 activities" :
+    "All-class confidence";
+  document.getElementById("sample-help").textContent = `true: ${sample.class_name}`;
+
+  const perfRow = perf[state.model] || {};
+  document.getElementById("model-help").textContent =
+    perfRow.acc_mean != null
+      ? `${(perfRow.acc_mean * 100).toFixed(2)}% · F1 ${(perfRow.macro_f1_mean * 100).toFixed(2)}%`
+      : "";
+
+  const preds = (ds.predictions[state.model] || {})[sample.id] || [];
+  const top = preds[0];
+  const correct = top && top.class_idx === sample.class_idx;
+
+  const verdict = document.getElementById("pred-verdict");
+  verdict.className = "pred-verdict " + (correct ? "ok" : "bad");
+  verdict.textContent = correct ? "✓ correct prediction" : "✗ incorrect prediction";
+  document.getElementById("pred-label").textContent = top ? classes[top.class_idx] : "—";
+  document.getElementById("pred-model-name").textContent = state.model;
+  document.getElementById("true-label").textContent = sample.class_name;
+
+  // Confidence ring
+  const confPct = top ? top.prob : 0;
+  const arc = document.getElementById("conf-arc");
+  const circumference = 2 * Math.PI * 50; // r=50
+  arc.setAttribute("stroke-dasharray", `${confPct * circumference} ${circumference}`);
+  document.getElementById("conf-text").textContent = (confPct * 100).toFixed(1) + "%";
+
+  document.getElementById("m-acc").textContent = perfRow.acc_mean != null ? (perfRow.acc_mean * 100).toFixed(2) + "%" : "—";
+  document.getElementById("m-f1").textContent = perfRow.macro_f1_mean != null ? (perfRow.macro_f1_mean * 100).toFixed(2) + "%" : "—";
+  document.getElementById("m-params").textContent = perfRow.params_total_mean != null ? fmtInt(perfRow.params_total_mean) : "—";
+  document.getElementById("m-lat").textContent = perfRow.latency_ms_batch1_mean != null ? perfRow.latency_ms_batch1_mean.toFixed(2) + " ms" : "—";
+
+  // All-class confidence strip
+  renderClassStrip(classes, preds, sample.class_idx, top);
+
+  // Top-k bars (collapsed by default)
+  const bars = document.getElementById("bars");
+  bars.innerHTML = "";
+  for (const p of preds) {
+    const row = document.createElement("div");
+    row.className = "bar-row" + (p.class_idx === sample.class_idx ? " is-true" : "");
+    row.innerHTML = `<span class="name">${classes[p.class_idx]}</span>
+      <span class="bar-outer"><span class="bar-inner" style="width:${(p.prob * 100).toFixed(1)}%"></span></span>
+      <span class="val">${(p.prob * 100).toFixed(2)}%</span>`;
+    bars.appendChild(row);
+  }
+
+  // Per-model accuracy on pool
+  const pool = document.getElementById("pool-acc");
+  pool.innerHTML = "";
+  const poolRows = ds.models.map(m => {
+    const preds = ds.predictions[m] || {};
+    let ok = 0, tot = 0;
+    for (const s of ds.samples) {
+      const p = preds[s.id]; if (!p) continue;
+      tot++;
+      if (p[0].class_idx === s.class_idx) ok++;
+    }
+    return { model: m, ok, tot, ratio: tot ? ok / tot : 0 };
+  }).sort((a, b) => b.ratio - a.ratio);
+  for (let i = 0; i < poolRows.length; i++) {
+    const r = poolRows[i];
+    const div = document.createElement("div");
+    div.className = "pool-row" + (i === 0 ? " top-model" : "");
+    div.innerHTML = `<span class="name">${r.model}</span>
+      <span class="bar-outer"><span class="bar-inner" style="width:${(r.ratio*100).toFixed(1)}%"></span></span>
+      <span class="val">${r.ok}/${r.tot} · ${(r.ratio*100).toFixed(0)}%</span>`;
+    pool.appendChild(div);
+  }
+
+  // Confusion matrix + Pareto
+  renderConfusion(ds, classes, perf);
+  renderPareto(perf, ds.models);
+
+  // All-model per-sample comparison
+  const cmp = document.getElementById("cmp-all");
+  cmp.innerHTML = "";
+  const rows = ds.models.map(m => {
+    const p = (ds.predictions[m] || {})[sample.id];
+    if (!p || !p.length) return null;
+    return { model: m, top: p[0] };
+  }).filter(Boolean).sort((a, b) => b.top.prob - a.top.prob);
+  for (const r of rows) {
+    const ok = r.top.class_idx === sample.class_idx;
+    const div = document.createElement("div");
+    div.className = "cmp-row " + (ok ? "correct" : "wrong");
+    div.innerHTML = `<span class="name">${r.model}
+        <span class="badge ${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'}</span>
+      </span>
+      <span class="bar-outer"><span class="bar-inner" style="width:${(r.top.prob * 100).toFixed(1)}%"></span></span>
+      <span class="pred-label">→ ${classes[r.top.class_idx]}</span>
+      <span class="val">${(r.top.prob * 100).toFixed(1)}%</span>`;
+    cmp.appendChild(div);
+  }
+}
+
+function humanLabel(dataset, cls) {
+  if (dataset === "NTU-Fi-HumanID") return `Subject ${cls}`;
+  if (dataset === "NTU-Fi_HAR") return cls.toUpperCase();
+  return cls;
+}
+
+function renderClassStrip(classes, preds, trueIdx, top) {
+  const strip = document.getElementById("class-strip");
+  strip.innerHTML = "";
+  const probByIdx = new Array(classes.length).fill(0);
+  for (const p of preds) probByIdx[p.class_idx] = p.prob;
+  // Top-1 index (picked by the model)
+  const predIdx = top ? top.class_idx : -1;
+  const n = classes.length;
+
+  const bars = document.createElement("div");
+  bars.className = "strip-bars";
+  bars.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+  for (let i = 0; i < n; i++) {
+    const p = probByIdx[i];
+    const col = document.createElement("div");
+    let klass = "strip-col";
+    if (i === predIdx && i === trueIdx) klass += " is-both";
+    else if (i === predIdx) klass += " is-pred";
+    else if (i === trueIdx) klass += " is-true";
+    col.className = klass;
+    const h = Math.max(2, p * 100);
+    const val = (p * 100).toFixed(p >= 0.005 ? 1 : 3);
+    col.innerHTML = `
+      <span class="col-val">${val}%</span>
+      <div class="col-bar" style="height:${h}%"></div>
+    `;
+    bars.appendChild(col);
+  }
+  strip.appendChild(bars);
+
+  const lbls = document.createElement("div");
+  lbls.className = "strip-labels";
+  lbls.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+  for (let i = 0; i < n; i++) {
+    const l = document.createElement("div");
+    let klass = "strip-lbl";
+    if (i === predIdx && i === trueIdx) klass += " is-both";
+    else if (i === predIdx) klass += " is-pred";
+    else if (i === trueIdx) klass += " is-true";
+    l.className = klass;
+    l.innerHTML = `<span class="dot"></span><span>${classes[i]}</span>`;
+    lbls.appendChild(l);
+  }
+  strip.appendChild(lbls);
+}
+
+function renderConfusion(ds, classes, perf) {
+  const cm = (ds.confusion_matrices || {})[state.model];
+  const sub = document.getElementById("cm-subtitle");
+  const wrap = document.getElementById("cm-wrap");
+  wrap.innerHTML = "";
+  if (!cm) { sub.textContent = "— not available for " + state.model; return; }
+  const n = cm.length;
+  const rowSums = cm.map(r => r.reduce((a, b) => a + b, 0));
+  const diag = cm.reduce((a, r, i) => a + r[i], 0);
+  const total = rowSums.reduce((a, b) => a + b, 0);
+  sub.textContent = `${state.model} · ${diag}/${total} correct (${(diag/total*100).toFixed(2)}%)`;
+  const cell = n > 12 ? 22 : 32;
+  const svgW = cell * n + 120;
+  const svgH = cell * n + 100;
+  let svg = `<svg viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg" style="min-width:${svgW}px;max-width:100%">`;
+  for (let i = 0; i < n; i++) {
+    const rowTot = Math.max(1, rowSums[i]);
+    for (let j = 0; j < n; j++) {
+      const v = cm[i][j] / rowTot;
+      const x = 100 + j * cell, y = 40 + i * cell;
+      const isDiag = i === j;
+      const alpha = Math.max(v, 0);
+      const color = isDiag
+        ? `rgba(16,185,129,${0.12 + alpha * 0.75})`
+        : `rgba(239,68,68,${Math.min(0.85, alpha * 1.0 + (v > 0 ? 0.05 : 0))})`;
+      svg += `<rect x="${x}" y="${y}" width="${cell - 1}" height="${cell - 1}" fill="${color}" stroke="white" stroke-width="1"/>`;
+      if (v > 0.10) {
+        const col = (isDiag && v > 0.5) ? "#065f46" : (!isDiag && v > 0.3 ? "#7f1d1d" : "#334155");
+        svg += `<text x="${x + cell/2}" y="${y + cell/2 + 4}" fill="${col}" font-size="${Math.min(12, cell*0.4)}" text-anchor="middle" font-family="JetBrains Mono" font-weight="600">${cm[i][j]}</text>`;
+      }
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    const lbl = classes[i] ?? String(i);
+    svg += `<text x="92" y="${40 + i * cell + cell*0.65}" fill="#64748b" font-size="11" text-anchor="end" font-family="JetBrains Mono">${lbl}</text>`;
+    svg += `<text x="${100 + i * cell + cell*0.5}" y="32" fill="#64748b" font-size="11" text-anchor="middle" font-family="JetBrains Mono">${lbl}</text>`;
+  }
+  svg += `<text x="${100 + (n * cell)/2}" y="${40 + n * cell + 22}" fill="#4f46e5" font-size="11" text-anchor="middle">predicted →</text>`;
+  svg += `<text x="20" y="${40 + (n * cell)/2}" fill="#4f46e5" font-size="11" text-anchor="middle" transform="rotate(-90, 20, ${40 + (n * cell)/2})">true →</text>`;
+  svg += "</svg>";
+  wrap.innerHTML = svg;
+}
+
+function renderPareto(perf, modelsInBundle) {
+  const wrap = document.getElementById("pareto-wrap");
+  wrap.innerHTML = "";
+  const rows = Object.values(perf).filter(r => r.acc_mean != null && r.latency_ms_batch1_mean != null);
+  if (!rows.length) { wrap.innerHTML = '<div class="muted small">no data</div>'; return; }
+  const W = 860, H = 360, padL = 60, padR = 40, padT = 32, padB = 48;
+  const latMin = Math.max(0.05, Math.min(...rows.map(r => r.latency_ms_batch1_mean)) * 0.8);
+  const latMax = Math.max(...rows.map(r => r.latency_ms_batch1_mean)) * 1.15;
+  const accMin = Math.max(0, Math.min(...rows.map(r => r.acc_mean)) - 0.05);
+  const accMax = Math.min(1, Math.max(...rows.map(r => r.acc_mean)) + 0.02);
+  const logX = v => Math.log10(Math.max(latMin, v));
+  const xScale = v => padL + (logX(v) - logX(latMin)) / (logX(latMax) - logX(latMin)) * (W - padL - padR);
+  const yScale = v => padT + (1 - (v - accMin) / (accMax - accMin)) * (H - padT - padB);
+  const paramMin = Math.min(...rows.map(r => r.params_total_mean || 1));
+  const paramMax = Math.max(...rows.map(r => r.params_total_mean || 1));
+  const rScale = v => 5 + 14 * Math.sqrt(Math.max(0, (Math.log10(v) - Math.log10(paramMin))) / Math.max(0.01, Math.log10(paramMax) - Math.log10(paramMin)));
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px">`;
+  const xticks = [0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10];
+  for (const t of xticks) {
+    if (t < latMin || t > latMax) continue;
+    const x = xScale(t);
+    svg += `<line x1="${x}" x2="${x}" y1="${padT}" y2="${H - padB}" stroke="#eef2f7"/>`;
+    svg += `<text x="${x}" y="${H - padB + 14}" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="JetBrains Mono">${t}</text>`;
+  }
+  for (let acc = Math.ceil(accMin * 10) / 10; acc <= accMax; acc += 0.1) {
+    const y = yScale(acc);
+    svg += `<line y1="${y}" y2="${y}" x1="${padL}" x2="${W - padR}" stroke="#eef2f7"/>`;
+    svg += `<text y="${y + 3}" x="${padL - 6}" fill="#94a3b8" font-size="10" text-anchor="end" font-family="JetBrains Mono">${(acc * 100).toFixed(0)}%</text>`;
+  }
+  svg += `<text x="${(padL + W - padR)/2}" y="${H - 10}" fill="#64748b" font-size="11" text-anchor="middle">latency batch=1 (ms, log)</text>`;
+  svg += `<text x="16" y="${(padT + H - padB)/2}" fill="#64748b" font-size="11" text-anchor="middle" transform="rotate(-90, 16, ${(padT + H - padB)/2})">accuracy (test)</text>`;
+
+  for (const r of rows) {
+    const x = xScale(r.latency_ms_batch1_mean), y = yScale(r.acc_mean);
+    const radius = rScale(r.params_total_mean || 1);
+    const isShown = modelsInBundle.includes(r.model);
+    const fill = isShown ? "#4f46e5" : "#10b981";
+    svg += `<circle cx="${x}" cy="${y}" r="${radius}" fill="${fill}" fill-opacity="0.25" stroke="${fill}" stroke-width="1.6"/>`;
+    // Place label above the bubble unless that would clip the top edge; then flip below.
+    const labelAbove = (y - radius - 10) >= (padT + 2);
+    const labelY = labelAbove ? (y - radius - 5) : (y + radius + 12);
+    // Keep the label inside horizontal bounds (some labels are long, e.g. ResNet101)
+    const labelHalf = Math.max(22, r.model.length * 3);
+    const anchor = (x - labelHalf) < padL ? "start" : ((x + labelHalf) > (W - padR) ? "end" : "middle");
+    const labelX = anchor === "start" ? (x - radius - 2) : anchor === "end" ? (x + radius + 2) : x;
+    svg += `<text x="${labelX}" y="${labelY}" fill="#0f172a" font-size="10" text-anchor="${anchor}" font-weight="600">${r.model}</text>`;
+  }
+  svg += "</svg>";
+  wrap.innerHTML = svg;
+}
+
+function renderSummary() {
+  document.querySelectorAll("#summary-tabs button").forEach(b => b.classList.toggle("active", b.textContent === state.summaryDataset));
+  const tbody = document.querySelector("#tbl-summary tbody");
+  const rows = state.data.summary.filter(r => r.dataset === state.summaryDataset);
+  rows.sort((a, b) => {
+    const av = a[state.sortKey], bv = b[state.sortKey];
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (typeof av === "string") return state.sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return state.sortAsc ? av - bv : bv - av;
+  });
+  tbody.innerHTML = "";
+  const maxAcc = Math.max(...rows.map(r => r.acc_mean ?? 0));
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    if (r.acc_mean === maxAcc) tr.classList.add("highlight");
+    const bestTag = (r.acc_mean === maxAcc) ? ' <span class="badge-pill good">BEST</span>' : "";
+    tr.innerHTML = `
+      <td><b>${r.model}</b>${bestTag}</td>
+      <td class="num">${fmtPct(r.acc_mean)} <span class="muted tiny">±${fmtPct(r.acc_std)}</span></td>
+      <td class="num">${fmtPct(r.macro_f1_mean)}</td>
+      <td class="num">${fmtInt(r.params_total_mean)}</td>
+      <td class="num">${fmtNum(r.latency_ms_batch1_mean)} ms</td>
+      <td class="num">${fmtNum(r.latency_ms_batch64_mean)} ms</td>
+      <td class="num">${fmtInt(r.peak_gpu_mem_mb_mean)} MB</td>
+      <td class="num">${fmtInt(r.train_time_total_sec_mean)} s</td>`;
+    tbody.appendChild(tr);
+  }
+  document.querySelectorAll("#tbl-summary th[data-key]").forEach(th => {
+    th.classList.toggle("sorted", th.dataset.key === state.sortKey);
+    th.classList.toggle("asc", th.dataset.key === state.sortKey && state.sortAsc);
+    th.onclick = () => {
+      if (state.sortKey === th.dataset.key) state.sortAsc = !state.sortAsc;
+      else { state.sortKey = th.dataset.key; state.sortAsc = false; }
+      renderSummary();
+    };
+  });
+}
+
+function fmtPct(v) { return v == null || isNaN(v) ? "—" : (v * 100).toFixed(2) + "%"; }
+function fmtNum(v) { return v == null || isNaN(v) ? "—" : v.toFixed(2); }
+function fmtInt(v) {
+  if (v == null || isNaN(v)) return "—";
+  const n = Math.round(v);
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+
+document.getElementById("btn-random").onclick = () => {
+  const ds = state.data.datasets[state.dataset];
+  const s = ds.samples[Math.floor(Math.random() * ds.samples.length)];
+  state.sampleId = s.id;
+  document.getElementById("sel-sample").value = s.id;
+  render();
+};
+document.getElementById("btn-next").onclick = () => {
+  const ds = state.data.datasets[state.dataset];
+  const i = ds.samples.findIndex(s => s.id === state.sampleId);
+  const next = ds.samples[(i + 1) % ds.samples.length];
+  state.sampleId = next.id;
+  document.getElementById("sel-sample").value = next.id;
+  render();
+};
+
+load().catch(e => {
+  document.body.innerHTML = `<pre style="color:var(--bad);padding:24px;font-family:Inter">
+Failed to load demo data: ${e.message}
+
+Finder からダブルクリックする場合は demo/standalone.html を使ってください。
+または HTTP で配信してください：
+
+  python3 -m http.server 8000 --directory demo
+  # → http://localhost:8000/
+</pre>`;
+});
+</script>
+</body>
+</html>

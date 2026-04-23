@@ -10,7 +10,7 @@ import argparse
 import csv
 import os
 import pathlib
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 # Configure cache dirs prior to importing Matplotlib.
 cache_root = pathlib.Path(".cache")
@@ -28,6 +28,25 @@ import matplotlib.pyplot as plt
 
 plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["ps.fonttype"] = 42
+
+MAMBA_COLOR = "#e41a1c"  # strong red to highlight the new model prominently
+BASE_COLORS = [
+    "#377eb8",
+    "#4daf4a",
+    "#984ea3",
+    "#ff7f00",
+    "#f781bf",
+    "#a65628",
+    "#999999",
+    "#66c2a5",
+    "#fc8d62",
+    "#8da0cb",
+    "#e78ac3",
+    "#a6d854",
+    "#ffd92f",
+    "#e5c494",
+    "#b3b3b3",
+]
 
 
 def _read_csv(path: pathlib.Path) -> List[Dict[str, Any]]:
@@ -50,58 +69,166 @@ def _to_float(x: Any) -> float | None:
         return None
 
 
-def plot_bar(summary_rows: List[Dict[str, Any]], out_path: pathlib.Path) -> None:
-    # Plot best variant per model by acc_mean
+def _to_int(x: Any) -> int | None:
+    if x is None:
+        return None
+    if isinstance(x, int):
+        return x
+    s = str(x).strip()
+    if s == "" or s.lower() == "none":
+        return None
+    try:
+        return int(float(s))
+    except Exception:
+        return None
+
+
+def _cycle_colors(count: int) -> List[str]:
+    if count <= len(BASE_COLORS):
+        return BASE_COLORS[:count]
+    repeats = (count + len(BASE_COLORS) - 1) // len(BASE_COLORS)
+    return (BASE_COLORS * repeats)[:count]
+
+
+def build_model_palette(models: List[str]) -> Dict[str, str]:
+    palette: Dict[str, str] = {}
+    if "Mamba" in models:
+        palette["Mamba"] = MAMBA_COLOR
+    remaining = [m for m in sorted(models) if m not in palette]
+    for model, color in zip(remaining, _cycle_colors(len(remaining))):
+        palette[model] = color
+    return palette
+
+
+def _best_variant_per_model(summary_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     best: Dict[str, Dict[str, Any]] = {}
     for r in summary_rows:
-        model = r.get("model", "")
+        model = str(r.get("model", "")).strip()
         acc = _to_float(r.get("acc_mean"))
-        if acc is None:
+        if not model or acc is None:
             continue
-        if model not in best or acc > _to_float(best[model].get("acc_mean")):
+        if model not in best or acc > (_to_float(best[model].get("acc_mean")) or -1.0):
             best[model] = r
-    items = sorted(best.items(), key=lambda kv: _to_float(kv[1].get("acc_mean")) or 0.0, reverse=True)
-    labels = [m for m, _ in items]
-    accs = [(_to_float(r.get("acc_mean")) or 0.0) * 100.0 for _, r in items]
-    stds = [(_to_float(r.get("acc_std")) or 0.0) * 100.0 for _, r in items]
+    return sorted(best.values(), key=lambda r: _to_float(r.get("acc_mean")) or 0.0, reverse=True)
 
-    fig, ax = plt.subplots(figsize=(10, 4.5))
-    ax.bar(range(len(labels)), accs, yerr=stds, capsize=3)
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, rotation=45, ha="right")
-    ax.set_ylabel("Accuracy (%)")
-    ax.set_title("Validation Accuracy (mean±std over seeds)")
-    ax.grid(axis="y", alpha=0.3)
-    fig.tight_layout()
+
+def _summarize_seed_count(rows: List[Dict[str, Any]]) -> str | None:
+    ns = [_to_int(r.get("n")) for r in rows]
+    ns = [n for n in ns if n is not None]
+    if not ns:
+        return None
+    if len(set(ns)) == 1:
+        return f"Seeds: n={ns[0]}"
+    return f"Seeds: n≈{int(round(sum(ns) / len(ns)))}"
+
+
+def plot_bar(summary_rows: List[Dict[str, Any]], out_path: pathlib.Path, dataset: str | None = None) -> None:
+    best_rows = _best_variant_per_model(summary_rows)
+    if not best_rows:
+        return
+
+    models = [str(r.get("model", "")).strip() for r in best_rows]
+    palette = build_model_palette(models)
+    means = [(_to_float(r.get("acc_mean")) or 0.0) * 100.0 for r in best_rows]
+    stds_raw = [(_to_float(r.get("acc_std")) or 0.0) * 100.0 for r in best_rows]
+    stds = [min(std, max(0.0, 100.0 - mean)) for mean, std in zip(means, stds_raw)]
+    colors = [palette.get(m, "#377eb8") for m in models]
+
+    fig, ax = plt.subplots(figsize=(12, 5.5))
+    bars = ax.barh(models, means, xerr=stds, color=colors, alpha=0.9, capsize=5)
+    ax.invert_yaxis()
+    ax.set_xlabel("Accuracy (%)")
+    subtitle = _summarize_seed_count(best_rows)
+    title = "Validation Accuracy (best variant per model)"
+    if dataset:
+        title = f"{dataset} {title}"
+    if subtitle:
+        title = f"{title}\n{subtitle}"
+    ax.set_title(title)
+    ax.grid(axis="x", linestyle="--", alpha=0.35)
+    upper = max((m + s for m, s in zip(means, stds)), default=100.0)
+    ax.set_xlim(0, min(115, max(100, upper + 8)))
+
+    for bar, mean, std in zip(bars, means, stds):
+        ax.text(
+            mean + std + 0.5,
+            bar.get_y() + bar.get_height() / 2,
+            f"{mean:.1f}±{std:.1f}",
+            va="center",
+            ha="left",
+            fontsize=9,
+        )
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_pareto(pareto_rows: List[Dict[str, Any]], out_path: pathlib.Path, batch: str) -> None:
-    xs = []
-    ys = []
-    labels = []
-    sizes = []
+def plot_pareto(
+    pareto_rows: List[Dict[str, Any]],
+    out_path: pathlib.Path,
+    batch: str,
+    dataset: str | None = None,
+    label_points: bool = True,
+) -> None:
+    points: List[Tuple[float, float, str, str, float]] = []
     for r in pareto_rows:
         acc = _to_float(r.get("acc_mean"))
         lat = _to_float(r.get(f"latency_ms_{batch}_mean"))
         params = _to_float(r.get("params_total_mean"))
-        if acc is None or lat is None:
+        model = str(r.get("model", "")).strip()
+        variant = str(r.get("variant", "")).strip()
+        if not model or acc is None or lat is None:
             continue
-        xs.append(lat)
-        ys.append(acc * 100.0)
-        labels.append(f"{r.get('model')}")
-        sizes.append(max(10.0, (params or 1.0) ** 0.5 / 10.0))
-    fig, ax = plt.subplots(figsize=(6.5, 5.0))
-    ax.scatter(xs, ys, s=[s for s in sizes], alpha=0.7)
+        size = max(18.0, (params or 1.0) ** 0.5 / 12.0)
+        points.append((lat, acc * 100.0, model, variant, size))
+    if not points:
+        return
+
+    models = sorted({m for _, _, m, _, _ in points})
+    palette = build_model_palette(models)
+    variants_by_model: Dict[str, set[str]] = {}
+    for _, _, model, variant, _ in points:
+        variants_by_model.setdefault(model, set()).add(variant)
+
+    fig, ax = plt.subplots(figsize=(7.0, 5.2))
+    for lat, acc_pct, model, variant, size in points:
+        color = palette.get(model, "#377eb8")
+        ax.scatter(lat, acc_pct, s=size, alpha=0.75, color=color, edgecolors="white", linewidths=0.6)
+        if label_points:
+            label = model
+            if variant and len(variants_by_model.get(model, set())) > 1:
+                label = f"{model} ({variant})"
+            ax.annotate(label, (lat, acc_pct), xytext=(4, 3), textcoords="offset points", fontsize=8, color=color)
+
     ax.set_xlabel(f"Latency (ms) batch={batch.replace('batch', '')}")
     ax.set_ylabel("Accuracy (%)")
-    ax.set_title("Pareto: Accuracy vs Latency")
+    title = "Pareto: Accuracy vs Latency"
+    if dataset:
+        title = f"{dataset} {title}"
+    ax.set_title(title)
     ax.grid(alpha=0.3)
-    fig.tight_layout()
+
+    # Legend (model -> color)
+    try:
+        from matplotlib.lines import Line2D
+
+        handles = [
+            Line2D([0], [0], marker="o", color="none", markerfacecolor=palette.get(m, "#377eb8"), markersize=8, label=m)
+            for m in models
+        ]
+        legend = ax.legend(handles=handles, title="Model", loc="lower left", bbox_to_anchor=(1.01, 0.0), fontsize="small")
+        fig.tight_layout(rect=(0, 0, 0.84, 1))
+        extra = [legend]
+    except Exception:
+        fig.tight_layout()
+        extra = None
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight", bbox_extra_artists=extra, pad_inches=0.2)
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight", bbox_extra_artists=extra)
     plt.close(fig)
 
 
@@ -110,17 +237,89 @@ def main() -> None:
     p.add_argument("--in-dir", type=pathlib.Path, default=pathlib.Path("artifacts/aggregate"))
     p.add_argument("--out-dir", type=pathlib.Path, default=pathlib.Path("artifacts/aggregate/plots"))
     p.add_argument("--dataset", type=str, default=None)
+    p.add_argument(
+        "--no-point-labels",
+        action="store_true",
+        help="Disable point labels in Pareto plots (keeps legend only).",
+    )
     args = p.parse_args()
 
-    summary = _read_csv(args.in_dir / "summary.csv")
-    pareto = _read_csv(args.in_dir / "pareto.csv")
+    summary_path = args.in_dir / "summary.csv"
+    pareto_path = args.in_dir / "pareto.csv"
+    if not summary_path.is_file() or not pareto_path.is_file():
+        raise FileNotFoundError(f"Missing required files under {args.in_dir}: summary.csv / pareto.csv")
+
+    summary = _read_csv(summary_path)
+    pareto = _read_csv(pareto_path)
     if args.dataset:
         summary = [r for r in summary if r.get("dataset") == args.dataset]
         pareto = [r for r in pareto if r.get("dataset") == args.dataset]
 
-    plot_bar(summary, args.out_dir / "accuracy_bar.png")
-    plot_pareto(pareto, args.out_dir / "pareto_batch1.png", batch="batch1")
-    plot_pareto(pareto, args.out_dir / "pareto_batch64.png", batch="batch64")
+    if args.dataset:
+        # Keep the original filename (`accuracy_bar.png`) for backward compatibility.
+        plot_bar(summary, args.out_dir / "accuracy_bar_meanstd.png", dataset=args.dataset)
+        plot_bar(summary, args.out_dir / "accuracy_bar.png", dataset=args.dataset)
+        plot_pareto(
+            pareto,
+            args.out_dir / "pareto_batch1.png",
+            batch="batch1",
+            dataset=args.dataset,
+            label_points=not args.no_point_labels,
+        )
+        plot_pareto(
+            pareto,
+            args.out_dir / "pareto_batch64.png",
+            batch="batch64",
+            dataset=args.dataset,
+            label_points=not args.no_point_labels,
+        )
+        print(f"Wrote plots -> {args.out_dir}")
+        return
+
+    # No dataset filter: produce one set per dataset to avoid mixing distributions.
+    datasets = sorted({str(r.get("dataset", "")).strip() for r in summary if str(r.get("dataset", "")).strip()})
+    if len(datasets) == 1:
+        dataset = datasets[0]
+        plot_bar(summary, args.out_dir / "accuracy_bar_meanstd.png", dataset=dataset)
+        plot_bar(summary, args.out_dir / "accuracy_bar.png", dataset=dataset)
+        plot_pareto(
+            pareto,
+            args.out_dir / "pareto_batch1.png",
+            batch="batch1",
+            dataset=dataset,
+            label_points=not args.no_point_labels,
+        )
+        plot_pareto(
+            pareto,
+            args.out_dir / "pareto_batch64.png",
+            batch="batch64",
+            dataset=dataset,
+            label_points=not args.no_point_labels,
+        )
+        print(f"Wrote plots -> {args.out_dir}")
+        return
+
+    for dataset in datasets:
+        summary_ds = [r for r in summary if str(r.get("dataset", "")).strip() == dataset]
+        pareto_ds = [r for r in pareto if str(r.get("dataset", "")).strip() == dataset]
+        out_base = args.out_dir / dataset
+        plot_bar(summary_ds, out_base / "accuracy_bar_meanstd.png", dataset=dataset)
+        plot_bar(summary_ds, out_base / "accuracy_bar.png", dataset=dataset)
+        plot_pareto(
+            pareto_ds,
+            out_base / "pareto_batch1.png",
+            batch="batch1",
+            dataset=dataset,
+            label_points=not args.no_point_labels,
+        )
+        plot_pareto(
+            pareto_ds,
+            out_base / "pareto_batch64.png",
+            batch="batch64",
+            dataset=dataset,
+            label_points=not args.no_point_labels,
+        )
+
     print(f"Wrote plots -> {args.out_dir}")
 
 

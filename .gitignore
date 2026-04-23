@@ -30,3 +30,5 @@ test/
 *.fls
 paper*.*
 *.json
+runs
+*.yml

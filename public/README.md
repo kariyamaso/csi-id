@@ -60,7 +60,8 @@ python public/train_all_models.py --dataset Widar --seeds 0 1 2 --config public/
 ## Plots
 
 - From training logs (NTU-Fi): `public/plot_ntu_fi_results.py`, `public/export_results_table.py`
-- From aggregated CSVs (all datasets): `public/scripts/plot_aggregate.py`
+- From aggregated CSVs (all datasets): `public/scripts/plot_aggregate.py` (adds color/legend; writes per-dataset subfolders when multiple datasets are present)
+- From per-run confusion artifacts: `public/scripts/plot_confusion_from_runs.py` (averages over seeds; row-normalized with colorbar legend)
 
 ## One-command run
 

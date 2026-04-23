@@ -83,6 +83,8 @@ def main() -> None:
     for (dataset, model, variant), rows in grouped.items():
         acc_mean, acc_std = _mean_std(r.get("acc") for r in rows)
         loss_mean, loss_std = _mean_std(r.get("loss") for r in rows)
+        macro_f1_mean, macro_f1_std = _mean_std(r.get("macro_f1") for r in rows)
+        macro_recall_mean, macro_recall_std = _mean_std(r.get("macro_recall") for r in rows)
         params_total = _mean(r.get("params_total") for r in rows)
         params_trainable = _mean(r.get("params_trainable") for r in rows)
         flops_forward = _mean(r.get("flops_forward") for r in rows)
@@ -103,6 +105,10 @@ def main() -> None:
                 "acc_std": acc_std,
                 "loss_mean": loss_mean,
                 "loss_std": loss_std,
+                "macro_f1_mean": macro_f1_mean,
+                "macro_f1_std": macro_f1_std,
+                "macro_recall_mean": macro_recall_mean,
+                "macro_recall_std": macro_recall_std,
                 "params_total_mean": params_total,
                 "params_trainable_mean": params_trainable,
                 "flops_forward_mean": flops_forward,
@@ -138,6 +144,10 @@ def main() -> None:
                 "acc_std": acc_std,
                 "loss_mean": loss_mean,
                 "loss_std": loss_std,
+                "macro_f1_mean": macro_f1_mean,
+                "macro_f1_std": macro_f1_std,
+                "macro_recall_mean": macro_recall_mean,
+                "macro_recall_std": macro_recall_std,
                 "mamba_selective": example.get("mamba_selective"),
                 "pooling": example.get("pooling"),
                 "seq_len": example.get("seq_len"),
@@ -166,6 +176,10 @@ def main() -> None:
             "acc_std",
             "loss_mean",
             "loss_std",
+            "macro_f1_mean",
+            "macro_f1_std",
+            "macro_recall_mean",
+            "macro_recall_std",
             "params_total_mean",
             "params_trainable_mean",
             "flops_forward_mean",
@@ -202,6 +216,10 @@ def main() -> None:
             "acc_std",
             "loss_mean",
             "loss_std",
+            "macro_f1_mean",
+            "macro_f1_std",
+            "macro_recall_mean",
+            "macro_recall_std",
             "mamba_selective",
             "pooling",
             "seq_len",
