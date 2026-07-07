@@ -29,6 +29,7 @@ import torch.nn.functional as F
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "public"))
+sys.path.insert(0, str(REPO / "scripts"))
 
 from wisense.models.ntu_fi_model import (  # noqa: E402
     NTU_Fi_BiLSTM,
@@ -36,7 +37,6 @@ from wisense.models.ntu_fi_model import (  # noqa: E402
     NTU_Fi_GRU,
     NTU_Fi_LSTM,
     NTU_Fi_MLP,
-    NTU_Fi_Mamba,
     NTU_Fi_RNN,
     NTU_Fi_ResNet101,
     NTU_Fi_ResNet18,
@@ -44,6 +44,16 @@ from wisense.models.ntu_fi_model import (  # noqa: E402
     NTU_Fi_LeNet,
     NTU_Fi_ViT,
 )
+
+try:
+    import mamba_ssm  # noqa: F401
+    from wisense.models.ntu_fi_model import NTU_Fi_Mamba
+    _HAS_MAMBA_SSM = True
+except Exception:
+    _HAS_MAMBA_SSM = False
+    NTU_Fi_Mamba = None  # type: ignore
+
+from cpu_mamba import CpuGenericMambaClassifier  # noqa: E402
 
 CSI_MEAN = 42.3199
 CSI_STD = 4.9802
@@ -98,7 +108,12 @@ def build_model(name: str, num_classes: int):
     if name == "ViT":
         return NTU_Fi_ViT(num_classes=num_classes, **VIT_CFG)
     if name == "Mamba":
-        return NTU_Fi_Mamba(num_classes, pooling="mean", selective=True, **MAMBA_CFG)
+        if _HAS_MAMBA_SSM:
+            return NTU_Fi_Mamba(num_classes, pooling="mean", selective=True, **MAMBA_CFG)
+        # Pure-PyTorch drop-in so we can load GPU-trained Mamba ckpts locally.
+        return CpuGenericMambaClassifier(
+            num_classes=num_classes, in_features=342, pooling="mean", **MAMBA_CFG,
+        )
     raise ValueError(f"Unknown model {name}")
 
 
@@ -223,7 +238,8 @@ def main() -> None:
     pareto_rows = load_summary(REPO / "result" / "artifacts" / "aggregate" / "pareto.csv") \
         if (REPO / "result" / "artifacts" / "aggregate" / "pareto.csv").exists() else []
 
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device = {device}")
 
     bundle = {
         "summary": [],

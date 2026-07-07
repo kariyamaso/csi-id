@@ -27,23 +27,33 @@ DEFAULT_MODELS = ["MLP", "LeNet", "GRU", "LSTM", "BiLSTM", "CNN+GRU", "ResNet18"
 MAX_EPOCHS = {
     "MLP": 30, "LeNet": 30, "ResNet18": 30, "ResNet50": 30, "ResNet101": 30,
     "RNN": 40, "GRU": 22, "LSTM": 22, "BiLSTM": 22, "CNN+GRU": 40, "ViT": 40,
-    "Mamba": 12,
+    "Mamba": 30,
 }
 PATIENCE = 5  # early stop
 
 
 def _build_model(dataset_name: str, model_name: str, root: str):
     if model_name == "Mamba":
-        # CPU Mamba needs small batch — the selective scan is a Python loop, so
-        # peak memory is O(B * L * d_inner * d_state) ≈ 1 GB per 16-sample batch.
         num_classes = {"NTU-Fi-HumanID": 14, "NTU-Fi_HAR": 6}[dataset_name]
+        # Try the canonical mamba-ssm layer first (GPU-only). Fall back to our
+        # pure-PyTorch scan implementation (runs on any device, slow on CPU).
+        try:
+            from wisense.models.ntu_fi_model import NTU_Fi_Mamba
+            model = NTU_Fi_Mamba(
+                num_classes, pooling="mean", selective=True,
+                d_model=256, depth=4, d_state=64, d_conv=4, expand=2, dropout=0.1,
+            )
+            batch = 64
+        except Exception as exc:  # noqa: BLE001
+            print(f"[{dataset_name}/Mamba] mamba-ssm unavailable ({exc}); using CPU Mamba")
+            model = CpuGenericMambaClassifier(
+                num_classes=num_classes, in_features=342,
+                d_model=256, depth=4, d_state=64, d_conv=4, expand=2, dropout=0.1,
+            )
+            batch = 16
         train_loader, test_loader, _, _ = load_data_n_model(
             dataset_name=dataset_name, model_name="GRU", root=root,
-            seq_len=500, batch_train=16, batch_test=16, num_workers=0, seed=0,
-        )
-        model = CpuGenericMambaClassifier(
-            num_classes=num_classes, in_features=342,
-            d_model=128, depth=2, d_state=16, d_conv=4, expand=2, dropout=0.1,
+            seq_len=500, batch_train=batch, batch_test=batch, num_workers=0, seed=0,
         )
         return train_loader, test_loader, model
     train_loader, test_loader, model, _ = load_data_n_model(
@@ -131,7 +141,8 @@ def main() -> None:
     args = ap.parse_args()
 
     out_dir = Path(args.out)
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device = {device}")
     summary = []
     for ds in args.datasets:
         for m in args.models:
